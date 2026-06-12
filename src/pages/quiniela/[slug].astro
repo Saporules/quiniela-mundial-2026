@@ -9,7 +9,7 @@ import {
 } from '../../lib/db.js'
 import { getParticipantByToken } from '../../lib/db.js'
 import { getTeam, TIER_CONFIG, TEAMS } from '../../lib/teams.js'
-import { getMatchSchedule } from '../../lib/espn.js'
+import { getMatchSchedule, getGroupStandings } from '../../lib/espn.js'
 import { getLeftoverTeams } from '../../lib/assignment.js'
 
 const { slug } = Astro.params
@@ -38,7 +38,10 @@ const claims       = await getClaims(q.id)
 const leftover     = q.status !== 'setup' ? await getLeftoverTeams(q.id) : []
 
 // Live matches from ESPN
-const { today: matchesToday, week: matchesWeek, previewMode } = await getMatchSchedule(q.tournament)
+const [{ today: matchesToday, week: matchesWeek, previewMode }, groupStandings] = await Promise.all([
+  getMatchSchedule(q.tournament),
+  getGroupStandings(q.tournament),
+])
 
 // My teams (if participant)
 const myTeams = isParticipant
@@ -125,7 +128,7 @@ function assignmentsList() {
 
     <!-- Tab: Grupos -->
     {tab === 'grupos' && (
-      <GroupStage assignments={assignmentsList()} />
+      <GroupStage assignments={assignmentsList()} standings={groupStandings} />
     )}
 
     <!-- Tab: Llaves -->

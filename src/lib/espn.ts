@@ -98,6 +98,68 @@ export async function getStandings(tournament = 'world_cup_2026'): Promise<unkno
   return fetchWithCache<unknown>(url, cacheKey, 30)
 }
 
+export interface GroupStanding {
+  teamCode: string
+  played: number
+  won: number
+  drawn: number
+  lost: number
+  gd: number
+  points: number
+}
+
+export type GroupStandingsMap = Record<string, GroupStanding[]>
+
+export async function getGroupStandings(tournament = 'world_cup_2026'): Promise<GroupStandingsMap> {
+  const raw = await getStandings(tournament) as any
+  if (!raw) return {}
+
+  const result: GroupStandingsMap = {}
+
+  // ESPN returns groups either under `children` (grouped) or flat `standings.entries`
+  const groups: Array<{ name: string; entries: any[] }> = []
+
+  if (Array.isArray(raw?.children)) {
+    for (const child of raw.children) {
+      const groupName = (child.abbreviation ?? child.shortName ?? child.name ?? '').replace(/^Group\s*/i, '')
+      const entries = child.standings?.entries ?? child.entries ?? []
+      if (entries.length) groups.push({ name: groupName, entries })
+    }
+  } else if (Array.isArray(raw?.standings?.entries)) {
+    // Flat list — group by entry.group.shortName
+    for (const entry of raw.standings.entries) {
+      const groupName = entry.group?.shortName ?? entry.group?.name?.replace(/^Group\s*/i, '') ?? '?'
+      let g = groups.find(g => g.name === groupName)
+      if (!g) { g = { name: groupName, entries: [] }; groups.push(g) }
+      g.entries.push(entry)
+    }
+  }
+
+  for (const { name, entries } of groups) {
+    const standings: GroupStanding[] = entries.map((entry: any) => {
+      const abbr = (entry.team?.abbreviation ?? '').toUpperCase()
+      const stat = (key: string) => {
+        const s = (entry.stats as Array<{ name: string; value: number }> | undefined)
+        return s?.find(x => x.name === key)?.value ?? 0
+      }
+      return {
+        teamCode: abbr,
+        played: stat('gamesPlayed') || stat('played'),
+        won:    stat('wins')  || stat('won'),
+        drawn:  stat('ties')  || stat('draws') || stat('drawn'),
+        lost:   stat('losses') || stat('lost'),
+        gd:     stat('pointDifferential') || stat('goalDifference') || stat('gd'),
+        points: stat('points'),
+      }
+    })
+    // Sort by points desc, then GD desc
+    standings.sort((a, b) => b.points - a.points || b.gd - a.gd)
+    result[name] = standings
+  }
+
+  return result
+}
+
 export async function getUpcomingMatches(tournament = 'world_cup_2026'): Promise<ESPNEvent[]> {
   const data = await getScoreboard(tournament)
   return data?.events ?? []
