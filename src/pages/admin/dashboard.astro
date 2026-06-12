@@ -1,0 +1,195 @@
+---
+import Layout from '../../layouts/Layout.astro'
+import { getAdminFromRequest } from '../../lib/auth.js'
+import { getAllQuinielas } from '../../lib/db.js'
+
+const admin = await getAdminFromRequest(Astro.request)
+if (!admin) return Astro.redirect(`${import.meta.env.BASE_URL}admin`)
+
+const quinielas = await getAllQuinielas()
+
+const statusMeta: Record<string, { label: string; color: string; icon: string }> = {
+  setup:    { label: 'Configurando',    color: 'text-yellow-400 bg-yellow-400/10 border-yellow-400/30', icon: 'ph-gear' },
+  draft:    { label: 'Reclamo abierto', color: 'text-blue-400 bg-blue-400/10 border-blue-400/30',     icon: 'ph-hand-pointing' },
+  active:   { label: 'En curso',        color: 'text-green-400 bg-green-400/10 border-green-400/30',   icon: 'ph-soccer-ball' },
+  finished: { label: 'Terminada',       color: 'text-wc-muted bg-wc-muted/10 border-wc-muted/30',     icon: 'ph-flag-checkered' },
+}
+---
+
+<Layout title="Panel Admin" isAdmin={true}>
+  <div class="max-w-4xl mx-auto px-4 py-8">
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
+      <div>
+        <h1 class="font-display text-4xl text-wc-gold tracking-wide">PANEL ADMIN</h1>
+        <p class="text-wc-muted text-sm mt-1">
+          Hola, <span class="text-white">{admin.username}</span>
+        </p>
+      </div>
+      <button
+        onclick="document.getElementById('modal-nueva').classList.remove('hidden')"
+        class="btn-gold px-5 py-2.5 rounded-lg text-sm self-start sm:self-auto flex items-center gap-2"
+      >
+        <i class="ph-bold ph-plus"></i> Nueva Quiniela
+      </button>
+    </div>
+
+    {quinielas.length === 0 ? (
+      <div class="card p-12 text-center">
+        <i class="ph ph-buildings text-wc-muted" style="font-size:4rem"></i>
+        <h3 class="font-semibold text-lg mb-2 mt-4">Sin quinielas todavia</h3>
+        <p class="text-wc-muted text-sm">Crea tu primera quiniela para comenzar</p>
+      </div>
+    ) : (
+      <div class="space-y-3">
+        {quinielas.map(q => {
+          const s = statusMeta[q.status] ?? statusMeta['setup']!
+          return (
+            <a href={`${import.meta.env.BASE_URL}admin/quiniela/${q.id}`} class="card p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center gap-3 hover:border-wc-blue/50 transition-all block">
+              <div class="flex-1">
+                <div class="flex items-center gap-2 flex-wrap">
+                  <h3 class="font-semibold">{q.name}</h3>
+                  <span class:list={['text-xs px-2 py-0.5 rounded-full border flex items-center gap-1', s.color]}>
+                    <i class:list={['ph', s.icon, 'text-xs']}></i>
+                    {s.label}
+                  </span>
+                </div>
+                <div class="flex gap-4 mt-1 text-xs text-wc-muted flex-wrap">
+                  <span class="flex items-center gap-1">
+                    <i class="ph ph-key"></i> {q.slug}
+                  </span>
+                  <span class="flex items-center gap-1">
+                    <i class="ph ph-users"></i> {q.participant_count} participantes
+                  </span>
+                  <span class="flex items-center gap-1">
+                    <i class="ph ph-currency-circle-dollar"></i> ${q.base_price} MXN/persona
+                  </span>
+                </div>
+              </div>
+              <div class="text-wc-gold text-sm font-medium flex items-center gap-1">
+                Gestionar <i class="ph ph-arrow-right"></i>
+              </div>
+            </a>
+          )
+        })}
+      </div>
+    )}
+  </div>
+
+  <!-- Modal: Nueva Quiniela -->
+  <div id="modal-nueva" class="hidden fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+    <div class="card w-full max-w-md p-6 rounded-2xl">
+      <div class="flex items-center justify-between mb-5">
+        <h2 class="font-display text-2xl text-wc-gold">NUEVA QUINIELA</h2>
+        <button onclick="document.getElementById('modal-nueva').classList.add('hidden')" class="text-wc-muted hover:text-white">
+          <i class="ph ph-x text-xl"></i>
+        </button>
+      </div>
+
+      <form action={`${import.meta.env.BASE_URL}api/admin/quiniela/create`} method="post" class="space-y-4">
+        <div>
+          <label class="block text-sm font-medium mb-1.5">Nombre de la quiniela</label>
+          <input name="name" type="text" class="input-field" placeholder="ej: Quiniela Trabajo 2026" required maxlength="60" />
+        </div>
+        <div>
+          <label class="block text-sm font-medium mb-1.5">Torneo</label>
+          <select name="tournament" class="input-field">
+            <option value="world_cup_2026">FIFA World Cup 2026</option>
+            <option value="champions_league">UEFA Champions League</option>
+            <option value="liga_mx">Liga MX</option>
+          </select>
+        </div>
+
+        <!-- Modo -->
+        <div>
+          <label class="block text-sm font-medium mb-2">Modo de asignación</label>
+          <div class="grid grid-cols-2 gap-2">
+            <label id="opt-reclamo" class="cursor-pointer rounded-lg border-2 border-wc-gold bg-wc-gold/10 p-3 text-center transition-all">
+              <input type="radio" name="mode" value="reclamo" class="sr-only" checked />
+              <i class="ph-fill ph-hand-pointing text-wc-gold text-lg block mb-1"></i>
+              <span class="text-xs font-semibold text-wc-gold block">Modo Reclamo</span>
+              <p class="text-[10px] text-wc-muted mt-0.5">Sorteo por tiers + reclamo de sobrantes</p>
+            </label>
+            <label id="opt-full" class="cursor-pointer rounded-lg border-2 border-wc-border p-3 text-center transition-all">
+              <input type="radio" name="mode" value="full_random" class="sr-only" />
+              <i class="ph-fill ph-shuffle text-wc-muted text-lg block mb-1" id="opt-full-icon"></i>
+              <span class="text-xs font-semibold text-wc-muted block" id="opt-full-label">Full Aleatorio</span>
+              <p class="text-[10px] text-wc-muted mt-0.5">Todos los 48 equipos, sin reclamos</p>
+            </label>
+          </div>
+        </div>
+
+        <div id="price-block" class="space-y-3">
+          <div>
+            <label class="block text-sm font-medium mb-1.5">Precio base (MXN)</label>
+            <input name="base_price" type="number" class="input-field" value="300" min="50" step="50" required />
+          </div>
+          <div id="extra-prices-block">
+            <label class="block text-xs text-wc-muted mb-2">Precio extra por equipo sobrante</label>
+            <div class="grid grid-cols-3 gap-2">
+              <div>
+                <label class="block text-xs text-wc-gold mb-1 flex items-center gap-1">
+                  <i class="ph-fill ph-star text-xs"></i> Favorito
+                </label>
+                <input name="favorito_price" type="number" class="input-field text-sm" value="150" min="0" step="25" />
+              </div>
+              <div>
+                <label class="block text-xs text-blue-400 mb-1 flex items-center gap-1">
+                  <i class="ph-fill ph-fire text-xs"></i> Creyente
+                </label>
+                <input name="creyente_price" type="number" class="input-field text-sm" value="100" min="0" step="25" />
+              </div>
+              <div>
+                <label class="block text-xs text-wc-muted mb-1 flex items-center gap-1">
+                  <i class="ph ph-briefcase text-xs"></i> Maleta
+                </label>
+                <input name="malete_price" type="number" class="input-field text-sm" value="50" min="0" step="25" />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="flex gap-3 pt-2">
+          <button type="button" onclick="document.getElementById('modal-nueva').classList.add('hidden')" class="flex-1 py-2.5 rounded-lg border border-wc-border text-wc-muted hover:text-white transition-colors">
+            Cancelar
+          </button>
+          <button type="submit" class="flex-1 btn-gold py-2.5 rounded-lg flex items-center justify-center gap-2">
+            Crear <i class="ph ph-arrow-right"></i>
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</Layout>
+
+<script is:inline>
+(function () {
+  const optReclamo = document.getElementById('opt-reclamo')
+  const optFull    = document.getElementById('opt-full')
+  const extraPrices = document.getElementById('extra-prices-block')
+  const icon  = document.getElementById('opt-full-icon')
+  const label = document.getElementById('opt-full-label')
+
+  function setMode(mode) {
+    if (mode === 'full_random') {
+      optFull.classList.replace('border-wc-border', 'border-wc-gold')
+      optFull.classList.add('bg-wc-gold/10')
+      icon.classList.replace('text-wc-muted', 'text-wc-gold')
+      label.classList.replace('text-wc-muted', 'text-wc-gold')
+      optReclamo.classList.replace('border-wc-gold', 'border-wc-border')
+      optReclamo.classList.remove('bg-wc-gold/10')
+      if (extraPrices) extraPrices.style.display = 'none'
+    } else {
+      optReclamo.classList.replace('border-wc-border', 'border-wc-gold')
+      optReclamo.classList.add('bg-wc-gold/10')
+      optFull.classList.replace('border-wc-gold', 'border-wc-border')
+      optFull.classList.remove('bg-wc-gold/10')
+      icon.classList.replace('text-wc-gold', 'text-wc-muted')
+      label.classList.replace('text-wc-gold', 'text-wc-muted')
+      if (extraPrices) extraPrices.style.display = ''
+    }
+  }
+
+  optReclamo?.addEventListener('click', () => setMode('reclamo'))
+  optFull?.addEventListener('click', () => setMode('full_random'))
+})()
+</script>

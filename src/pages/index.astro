@@ -1,0 +1,120 @@
+---
+import Layout from '../layouts/Layout.astro'
+
+if (Astro.request.method === 'POST') {
+  const data = await Astro.request.formData()
+  const slug = (data.get('slug') as string)?.trim().toLowerCase()
+  if (slug) return Astro.redirect(`${import.meta.env.BASE_URL}quiniela/${slug}`)
+}
+---
+
+<Layout title="Inicio">
+  <!-- Hero -->
+  <div class="relative overflow-hidden">
+    <div class="absolute inset-0 bg-cover bg-center bg-no-repeat" style={`background-image: url('${import.meta.env.BASE_URL}fondo-mundial-2026.webp')`}></div>
+    <div class="absolute inset-0 bg-gradient-to-b from-wc-dark/70 via-wc-dark/60 to-wc-dark pointer-events-none"></div>
+
+    <div class="relative max-w-3xl mx-auto px-4 py-16 sm:py-24 text-center">
+      <div class="flex justify-center mb-4">
+        <i class="ph-fill ph-trophy text-wc-gold drop-shadow-[0_0_60px_rgba(249,168,37,0.5)]" style="font-size:5rem"></i>
+      </div>
+
+      <h1 class="font-display text-4xl sm:text-6xl text-wc-gold tracking-wide mb-2">
+        QUINIELA
+      </h1>
+      <h2 class="font-display text-5xl sm:text-7xl text-white tracking-widest mb-6">
+        MUNDIAL 2026
+      </h2>
+
+      <p class="text-white/90 text-base sm:text-lg mb-2">
+        Estados Unidos &middot; Canada &middot; Mexico
+      </p>
+      <p class="text-white/70 text-sm mb-10">
+        48 equipos &middot; hasta 6 contendientes &middot; el ganador se lleva todo
+      </p>
+
+      <!-- Enter quiniela code -->
+      <div class="card max-w-md mx-auto p-6">
+        <h3 class="font-semibold text-lg mb-1">Tienes un codigo de quiniela?</h3>
+        <p class="text-sm text-wc-muted mb-4">Ingresa el codigo que te compartio tu admin</p>
+
+        <form method="POST" class="flex gap-2">
+          <input
+            type="text"
+            name="slug"
+            placeholder="ej: abc12xyz"
+            class="input-field flex-1 tracking-widest"
+            autocomplete="off"
+            autocapitalize="off"
+            maxlength="20"
+          />
+          <button type="submit" class="btn-gold px-4 py-2 rounded-lg whitespace-nowrap text-sm flex items-center gap-1">
+            Entrar <i class="ph ph-arrow-right"></i>
+          </button>
+        </form>
+      </div>
+
+      <div class="mt-8">
+        <a href={`${import.meta.env.BASE_URL}admin`} class="text-sm text-wc-muted hover:text-wc-gold transition-colors underline underline-offset-4">
+          Soy administrador &rarr; crear quiniela
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <!-- How it works -->
+  <div class="max-w-4xl mx-auto px-4 py-12">
+    <h3 class="font-display text-3xl text-center text-wc-gold mb-8 tracking-wide">COMO FUNCIONA</h3>
+
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      {[
+        { icon: 'ph-fill ph-user-circle-plus', title: 'Admin crea', desc: 'El admin crea la quiniela, agrega participantes y establece el precio base (300 MXN).' },
+        { icon: 'ph-fill ph-shuffle', title: 'Reparto aleatorio', desc: 'Se reparten equipos al azar. Cada quien recibe Favoritos, Creyentes y Maletas.' },
+        { icon: 'ph-fill ph-handshake', title: 'Clama mas equipos', desc: 'Los equipos sobrantes se pueden reclamar pagando un extra. Crece la bolsa.' },
+        { icon: 'ph-fill ph-trophy', title: 'Gana el campeon', desc: 'Si tu equipo levanta la copa, te llevas todo. Si hay co-duenos, se divide.' },
+      ].map(step => (
+        <div class="card p-5 text-center">
+          <div class="flex justify-center mb-3">
+            <i class:list={[step.icon, 'text-wc-gold text-4xl']}></i>
+          </div>
+          <h4 class="font-semibold mb-2">{step.title}</h4>
+          <p class="text-sm text-wc-muted">{step.desc}</p>
+        </div>
+      ))}
+    </div>
+
+    <!-- Tiers explanation -->
+    <div class="mt-8 card p-6">
+      <h4 class="font-semibold text-center mb-4">Precios de equipos sobrantes</h4>
+      <div class="grid grid-cols-3 gap-4 text-center">
+        <div>
+          <div class="flex justify-center mb-1">
+            <i class="ph-fill ph-star text-wc-gold text-3xl"></i>
+          </div>
+          <div class="font-display text-wc-gold text-xl">FAVORITOS</div>
+          <div class="text-sm text-wc-muted">Argentina, Francia, Brasil...</div>
+          <div class="mt-2 text-wc-gold font-bold">$150 MXN</div>
+          <div class="text-xs text-wc-muted">por equipo (se divide entre co-duenos)</div>
+        </div>
+        <div>
+          <div class="flex justify-center mb-1">
+            <i class="ph-fill ph-fire text-blue-400 text-3xl"></i>
+          </div>
+          <div class="font-display text-blue-400 text-xl">CREYENTES</div>
+          <div class="text-sm text-wc-muted">Mexico, USA, Marruecos...</div>
+          <div class="mt-2 text-blue-400 font-bold">$100 MXN</div>
+          <div class="text-xs text-wc-muted">por equipo</div>
+        </div>
+        <div>
+          <div class="flex justify-center mb-1">
+            <i class="ph ph-briefcase text-wc-muted text-3xl"></i>
+          </div>
+          <div class="font-display text-wc-muted text-xl">MALETAS</div>
+          <div class="text-sm text-wc-muted">Arabia, Qatar, Honduras...</div>
+          <div class="mt-2 text-wc-muted font-bold">$50 MXN</div>
+          <div class="text-xs text-wc-muted">por equipo</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</Layout>

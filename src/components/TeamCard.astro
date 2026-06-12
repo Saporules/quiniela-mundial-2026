@@ -1,0 +1,42 @@
+---
+import type { Team } from '../types/index.js'
+import { TIER_CONFIG } from '../lib/teams.js'
+
+interface Props {
+  team: Team
+  ownerName?: string
+  sharePercentage?: number
+  isLeftover?: boolean
+  compact?: boolean
+}
+
+const { team, ownerName, sharePercentage = 100, isLeftover = false, compact = false } = Astro.props
+const tierCfg = TIER_CONFIG[team.tier]
+---
+
+<div class:list={[
+  'team-card relative rounded-xl border transition-all duration-200',
+  compact ? 'p-2' : 'p-3',
+  isLeftover
+    ? 'border-wc-gold/30 bg-wc-gold/5 hover:bg-wc-gold/10'
+    : 'border-wc-border bg-wc-card/50',
+]}>
+  <div class="flex items-center gap-2">
+    <span class:list={['text-xl', compact && 'text-lg']}>{team.flag}</span>
+    <div class="min-w-0 flex-1">
+      <p class:list={['font-semibold truncate', compact ? 'text-xs' : 'text-sm']}>{team.name}</p>
+      {!compact && (
+        <p class="text-xs text-wc-muted flex items-center gap-1">
+          <i class:list={[tierCfg.icon, 'text-xs']}></i>
+          <span>{tierCfg.label}</span>
+          {isLeftover && <span class="text-wc-gold">&middot; ${TIER_CONFIG[team.tier].extraPrice} MXN</span>}
+        </p>
+      )}
+    </div>
+    {ownerName && (
+      <span class="text-xs px-2 py-0.5 rounded-full bg-wc-blue/40 text-blue-300 whitespace-nowrap">
+        {sharePercentage < 100 ? `${sharePercentage.toFixed(0)}%` : ''} {ownerName}
+      </span>
+    )}
+  </div>
+</div>

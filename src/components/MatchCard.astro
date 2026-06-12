@@ -1,0 +1,82 @@
+---
+import type { ESPNEvent } from '../lib/espn.js'
+import { formatMatchTime, getMatchStatus } from '../lib/espn.js'
+
+interface Props {
+  event: ESPNEvent
+}
+
+const { event } = Astro.props
+const status = getMatchStatus(event)
+const comp = event.competitions[0]!
+const home = comp.competitors.find(c => c.homeAway === 'home')
+const away = comp.competitors.find(c => c.homeAway === 'away')
+const group = comp.groups?.name
+---
+
+<div class:list={[
+  'card p-3 sm:p-4 hover:border-wc-blue/50 transition-all',
+  status === 'in' && 'border-wc-red/40 bg-wc-red/5',
+]}>
+  {group && (
+    <p class="text-[10px] text-wc-muted mb-2 uppercase tracking-wider">{group}</p>
+  )}
+
+  <div class="flex items-center gap-2 sm:gap-4">
+    <div class="flex-1 flex flex-col items-center gap-1 text-center">
+      <img
+        src={home?.team.logo}
+        alt={home?.team.displayName}
+        class="w-8 h-8 sm:w-10 sm:h-10 object-contain"
+        onerror="this.style.display='none'"
+      />
+      <span class="text-xs font-medium">{home?.team.abbreviation ?? '?'}</span>
+    </div>
+
+    <div class="flex flex-col items-center gap-0.5 min-w-[80px]">
+      {status === 'pre' ? (
+        <span class="font-display text-wc-gold text-lg tracking-wider text-center">
+          {formatMatchTime(event.date)}
+        </span>
+      ) : (
+        <div class="flex items-center gap-2">
+          <span class:list={['font-display text-2xl', home?.winner ? 'text-white' : 'text-wc-muted']}>
+            {home?.score ?? '0'}
+          </span>
+          <span class="text-wc-muted font-display text-xl">:</span>
+          <span class:list={['font-display text-2xl', away?.winner ? 'text-white' : 'text-wc-muted']}>
+            {away?.score ?? '0'}
+          </span>
+        </div>
+      )}
+      {status === 'in' && (
+        <span class="text-[10px] text-wc-red font-medium flex items-center gap-1">
+          <i class="ph-fill ph-record animate-pulse"></i>
+          {event.status.displayClock || 'En vivo'}
+        </span>
+      )}
+      {status === 'post' && (
+        <span class="text-[10px] text-wc-muted flex items-center gap-1">
+          <i class="ph ph-flag-checkered"></i> Final
+        </span>
+      )}
+    </div>
+
+    <div class="flex-1 flex flex-col items-center gap-1 text-center">
+      <img
+        src={away?.team.logo}
+        alt={away?.team.displayName}
+        class="w-8 h-8 sm:w-10 sm:h-10 object-contain"
+        onerror="this.style.display='none'"
+      />
+      <span class="text-xs font-medium">{away?.team.abbreviation ?? '?'}</span>
+    </div>
+  </div>
+
+  {comp.venue && (
+    <p class="text-[10px] text-wc-muted text-center mt-2 flex items-center justify-center gap-1">
+      <i class="ph ph-map-pin"></i>
+      {comp.venue.fullName}{comp.venue.address?.city ? `, ${comp.venue.address.city}` : ''}
+    </p>
+  )}
+</div>

@@ -1,0 +1,315 @@
+---
+interface Props {
+  assignments: Array<{ team_code: string; participant_name: string; share_percentage: number }>
+}
+const { assignments } = Astro.props
+
+const rounds = [
+  {
+    name: 'Ronda 32', short: 'R32',
+    matches: Array.from({ length: 16 }, (_, i) => ({
+      id: `r32-${i}`, home: null, away: null, homeScore: null, awayScore: null, status: 'pre',
+    })),
+  },
+  {
+    name: 'Octavos', short: 'R16',
+    matches: Array.from({ length: 8 }, (_, i) => ({
+      id: `r16-${i}`, home: null, away: null, homeScore: null, awayScore: null, status: 'pre',
+    })),
+  },
+  {
+    name: 'Cuartos', short: 'QF',
+    matches: Array.from({ length: 4 }, (_, i) => ({
+      id: `qf-${i}`, home: null, away: null, homeScore: null, awayScore: null, status: 'pre',
+    })),
+  },
+  {
+    name: 'Semis', short: 'SF',
+    matches: Array.from({ length: 2 }, (_, i) => ({
+      id: `sf-${i}`, home: null, away: null, homeScore: null, awayScore: null, status: 'pre',
+    })),
+  },
+  {
+    name: 'Final', short: 'F',
+    matches: [{ id: 'final', home: null, away: null, homeScore: null, awayScore: null, status: 'pre' }],
+  },
+]
+
+// Helper: left-side match card (name left, score right)
+// Helper: right-side match card (score left, name right) — handled in template
+---
+
+<section>
+  <h2 class="font-display text-3xl text-wc-gold mb-2 tracking-wide">LLAVES</h2>
+  <p class="text-sm text-wc-muted mb-4">La fase eliminatoria comienza cuando terminan los grupos</p>
+
+  <!-- Toggle button -->
+  <div class="flex items-center gap-3 mb-6">
+    <button
+      id="bracket-toggle"
+      onclick="toggleBracketView()"
+      class="flex items-center gap-2 text-xs px-3 py-1.5 rounded-lg border border-wc-border text-wc-muted hover:text-white hover:border-wc-gold/40 transition-colors"
+    >
+      <i class="ph ph-list" id="bracket-toggle-icon"></i>
+      <span id="bracket-toggle-label">Ver en lista</span>
+    </button>
+  </div>
+
+  <!-- BRACKET VISUAL (default) -->
+  <div id="bracket-visual" class="overflow-x-auto pb-4 cursor-grab select-none" style="scroll-behavior:smooth">
+    <div style="width:max-content;margin:0 auto;padding:1.5rem 3rem">
+    <div class="relative flex items-center gap-4 py-8">
+
+      <!-- LEFT: R32(0-7) → R16(0-3) → QF(0-1) → SF(0) -->
+      <div class="flex gap-4 items-center">
+        <!-- R32 left -->
+        <div class="flex flex-col gap-2" style="width:160px">
+          <p class="font-display text-wc-muted text-xs text-center mb-1">RONDA 32</p>
+          {rounds[0]!.matches.slice(0, 8).map((m) => (
+            <div class="bracket-match card p-2 text-xs">
+              <div class="flex justify-between items-center py-0.5 hover:text-white transition-colors">
+                <span class="text-wc-muted truncate">{m.home ?? 'TBD'}</span>
+                <span class="font-bold ml-2 text-wc-gold">{m.homeScore ?? '-'}</span>
+              </div>
+              <div class="flex justify-between items-center py-0.5 hover:text-white transition-colors">
+                <span class="text-wc-muted truncate">{m.away ?? 'TBD'}</span>
+                <span class="font-bold ml-2 text-wc-gold">{m.awayScore ?? '-'}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <!-- R16 left -->
+        <div class="flex flex-col gap-8 justify-around" style="width:160px">
+          <p class="font-display text-wc-muted text-xs text-center mb-1">OCTAVOS</p>
+          {rounds[1]!.matches.slice(0, 4).map((m) => (
+            <div class="bracket-match card p-2 text-xs">
+              <div class="flex justify-between items-center py-0.5">
+                <span class="text-wc-muted truncate">{m.home ?? 'TBD'}</span>
+                <span class="font-bold ml-2 text-wc-gold">{m.homeScore ?? '-'}</span>
+              </div>
+              <div class="flex justify-between items-center py-0.5">
+                <span class="text-wc-muted truncate">{m.away ?? 'TBD'}</span>
+                <span class="font-bold ml-2 text-wc-gold">{m.awayScore ?? '-'}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <!-- QF left -->
+        <div class="flex flex-col gap-24 justify-around" style="width:140px">
+          <p class="font-display text-wc-muted text-xs text-center mb-1">CUARTOS</p>
+          {rounds[2]!.matches.slice(0, 2).map((m) => (
+            <div class="bracket-match card p-2 text-xs">
+              <div class="flex justify-between items-center py-0.5">
+                <span class="text-wc-muted truncate">{m.home ?? 'TBD'}</span>
+                <span class="font-bold ml-2 text-wc-gold">{m.homeScore ?? '-'}</span>
+              </div>
+              <div class="flex justify-between items-center py-0.5">
+                <span class="text-wc-muted truncate">{m.away ?? 'TBD'}</span>
+                <span class="font-bold ml-2 text-wc-gold">{m.awayScore ?? '-'}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <!-- SF left -->
+        <div class="flex flex-col justify-center" style="width:140px">
+          <p class="font-display text-wc-muted text-xs text-center mb-1">SEMIFINAL</p>
+          <div class="bracket-match card p-2 text-xs mt-8">
+            <div class="flex justify-between items-center py-0.5">
+              <span class="text-wc-muted truncate">{rounds[3]!.matches[0]!.home ?? 'TBD'}</span>
+              <span class="font-bold ml-2 text-wc-gold">-</span>
+            </div>
+            <div class="flex justify-between items-center py-0.5">
+              <span class="text-wc-muted truncate">{rounds[3]!.matches[0]!.away ?? 'TBD'}</span>
+              <span class="font-bold ml-2 text-wc-gold">-</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- CENTER: Copa + Final -->
+      <div class="flex flex-col items-center gap-4 px-4" style="min-width:200px">
+        <img
+          src={`${import.meta.env.BASE_URL}copa-del-mundo.png`}
+          alt="Copa del Mundo"
+          class="drop-shadow-[0_0_40px_rgba(249,168,37,0.5)]"
+          style="width:120px;height:auto"
+        />
+        <div class="text-center">
+          <p class="font-display text-wc-gold text-xl tracking-widest mb-2">GRAN FINAL</p>
+          <div class="card p-3 border-wc-gold/40 min-w-[180px]">
+            <div class="flex justify-between items-center py-1">
+              <span class="text-white font-semibold">{rounds[4]!.matches[0]!.home ?? 'TBD'}</span>
+              <span class="font-display text-wc-gold text-xl ml-3">-</span>
+            </div>
+            <div class="border-t border-wc-border my-1"></div>
+            <div class="flex justify-between items-center py-1">
+              <span class="text-white font-semibold">{rounds[4]!.matches[0]!.away ?? 'TBD'}</span>
+              <span class="font-display text-wc-gold text-xl ml-3">-</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- RIGHT: SF(1) → QF(2-3) → R16(4-7) → R32(8-15) — score left, name right -->
+      <div class="flex gap-4 items-center">
+        <!-- SF right -->
+        <div class="flex flex-col justify-center" style="width:140px">
+          <p class="font-display text-wc-muted text-xs text-center mb-1">SEMIFINAL</p>
+          <div class="bracket-match card p-2 text-xs mt-8">
+            <div class="flex justify-between items-center py-0.5">
+              <span class="font-bold mr-2 text-wc-gold">-</span>
+              <span class="text-wc-muted truncate text-right">{rounds[3]!.matches[1]?.home ?? 'TBD'}</span>
+            </div>
+            <div class="flex justify-between items-center py-0.5">
+              <span class="font-bold mr-2 text-wc-gold">-</span>
+              <span class="text-wc-muted truncate text-right">{rounds[3]!.matches[1]?.away ?? 'TBD'}</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- QF right -->
+        <div class="flex flex-col gap-24 justify-around" style="width:140px">
+          <p class="font-display text-wc-muted text-xs text-center mb-1">CUARTOS</p>
+          {rounds[2]!.matches.slice(2, 4).map((m) => (
+            <div class="bracket-match card p-2 text-xs">
+              <div class="flex justify-between items-center py-0.5">
+                <span class="font-bold mr-2 text-wc-gold">{m.homeScore ?? '-'}</span>
+                <span class="text-wc-muted truncate text-right">{m.home ?? 'TBD'}</span>
+              </div>
+              <div class="flex justify-between items-center py-0.5">
+                <span class="font-bold mr-2 text-wc-gold">{m.awayScore ?? '-'}</span>
+                <span class="text-wc-muted truncate text-right">{m.away ?? 'TBD'}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <!-- R16 right -->
+        <div class="flex flex-col gap-8 justify-around" style="width:160px">
+          <p class="font-display text-wc-muted text-xs text-center mb-1">OCTAVOS</p>
+          {rounds[1]!.matches.slice(4, 8).map((m) => (
+            <div class="bracket-match card p-2 text-xs">
+              <div class="flex justify-between items-center py-0.5">
+                <span class="font-bold mr-2 text-wc-gold">{m.homeScore ?? '-'}</span>
+                <span class="text-wc-muted truncate text-right">{m.home ?? 'TBD'}</span>
+              </div>
+              <div class="flex justify-between items-center py-0.5">
+                <span class="font-bold mr-2 text-wc-gold">{m.awayScore ?? '-'}</span>
+                <span class="text-wc-muted truncate text-right">{m.away ?? 'TBD'}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <!-- R32 right -->
+        <div class="flex flex-col gap-2" style="width:160px">
+          <p class="font-display text-wc-muted text-xs text-center mb-1">RONDA 32</p>
+          {rounds[0]!.matches.slice(8, 16).map((m) => (
+            <div class="bracket-match card p-2 text-xs">
+              <div class="flex justify-between items-center py-0.5">
+                <span class="font-bold mr-2 text-wc-gold">{m.homeScore ?? '-'}</span>
+                <span class="text-wc-muted truncate text-right">{m.home ?? 'TBD'}</span>
+              </div>
+              <div class="flex justify-between items-center py-0.5">
+                <span class="font-bold mr-2 text-wc-gold">{m.awayScore ?? '-'}</span>
+                <span class="text-wc-muted truncate text-right">{m.away ?? 'TBD'}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+    </div>
+    </div><!-- /max-content wrapper -->
+  </div>
+
+  <!-- LIST VIEW (hidden by default) -->
+  <div id="bracket-list" class="hidden">
+    <div class="flex overflow-x-auto gap-2 pb-2 mb-4">
+      {rounds.map((r, i) => (
+        <button
+          class:list={['bracket-tab flex-shrink-0 px-4 py-2 rounded-lg text-sm font-medium transition-colors', i === 4 ? 'bg-wc-gold text-wc-dark' : 'bg-wc-card border border-wc-border text-wc-muted hover:text-white']}
+          data-round={i}
+          onclick={`showRound(${i})`}
+        >
+          {r.short}
+        </button>
+      ))}
+    </div>
+
+    {rounds.map((round, roundIdx) => (
+      <div class="bracket-round-mobile" id={`round-${roundIdx}`} style={roundIdx !== 4 ? 'display:none' : ''}>
+        <h3 class="font-semibold text-wc-gold mb-3">{round.name}</h3>
+        <div class="space-y-2">
+          {round.matches.map((match) => (
+            <div class="card p-3 flex items-center gap-3">
+              <div class="flex-1 text-sm font-medium text-wc-muted">
+                {match.home ?? 'Por definir'}
+              </div>
+              <div class="px-3 py-1 bg-wc-dark rounded font-display text-wc-gold text-lg">
+                {match.homeScore !== null ? match.homeScore : '-'} : {match.awayScore !== null ? match.awayScore : '-'}
+              </div>
+              <div class="flex-1 text-sm font-medium text-wc-muted text-right">
+                {match.away ?? 'Por definir'}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    ))}
+  </div>
+</section>
+
+<script is:inline>
+var _bracketShowingVisual = true
+
+function toggleBracketView() {
+  _bracketShowingVisual = !_bracketShowingVisual
+  document.getElementById('bracket-visual').classList.toggle('hidden', !_bracketShowingVisual)
+  document.getElementById('bracket-list').classList.toggle('hidden', _bracketShowingVisual)
+  document.getElementById('bracket-toggle-icon').className = _bracketShowingVisual ? 'ph ph-list' : 'ph ph-graph'
+  document.getElementById('bracket-toggle-label').textContent = _bracketShowingVisual ? 'Ver en lista' : 'Ver llaves'
+}
+
+function showRound(idx) {
+  document.querySelectorAll('.bracket-round-mobile').forEach((el, i) => {
+    el.style.display = i === idx ? 'block' : 'none'
+  })
+  document.querySelectorAll('.bracket-tab').forEach((btn, i) => {
+    btn.classList.toggle('bg-wc-gold', i === idx)
+    btn.classList.toggle('text-wc-dark', i === idx)
+    btn.classList.toggle('bg-wc-card', i !== idx)
+    btn.classList.toggle('text-wc-muted', i !== idx)
+  })
+}
+
+// Drag-to-scroll for desktop
+;(function () {
+  const el = document.getElementById('bracket-visual')
+  if (!el) return
+  let isDown = false, startX = 0, scrollLeft = 0
+
+  el.addEventListener('mousedown', (e) => {
+    isDown = true
+    el.style.cursor = 'grabbing'
+    startX = e.pageX - el.offsetLeft
+    scrollLeft = el.scrollLeft
+    e.preventDefault()
+  })
+  el.addEventListener('mouseleave', () => { isDown = false; el.style.cursor = 'grab' })
+  el.addEventListener('mouseup',    () => { isDown = false; el.style.cursor = 'grab' })
+  el.addEventListener('mousemove',  (e) => {
+    if (!isDown) return
+    e.preventDefault()
+    const x    = e.pageX - el.offsetLeft
+    const walk = (x - startX) * 1.5
+    el.scrollLeft = scrollLeft - walk
+  })
+
+  // Center the bracket on load
+  el.scrollLeft = (el.scrollWidth - el.clientWidth) / 2
+})()
+</script>

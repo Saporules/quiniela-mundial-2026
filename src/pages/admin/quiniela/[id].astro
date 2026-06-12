@@ -1,0 +1,442 @@
+---
+import Layout from '../../../layouts/Layout.astro'
+import { getAdminFromRequest, generateAccessToken } from '../../../lib/auth.js'
+import { getQuinielById, getParticipants, getAssignments, getClaims } from '../../../lib/db.js'
+import { getLeftoverTeams, calculateTotalPool } from '../../../lib/assignment.js'
+import { getTeam, TIER_CONFIG } from '../../../lib/teams.js'
+
+const admin = await getAdminFromRequest(Astro.request)
+if (!admin) return Astro.redirect(`${import.meta.env.BASE_URL}admin`)
+
+const id = Number(Astro.params.id)
+const q = await getQuinielById(id)
+if (!q) return Astro.redirect(`${import.meta.env.BASE_URL}admin/dashboard`)
+
+const participants = await getParticipants(id)
+const assignments  = await getAssignments(id)
+const claims       = await getClaims(id)
+const leftover     = q.status !== 'setup' ? await getLeftoverTeams(id) : []
+const totalPool    = await calculateTotalPool(q.base_price, participants.length, id)
+
+const proto = Astro.request.headers.get('x-forwarded-proto') ?? 'https'
+const host  = Astro.request.headers.get('x-forwarded-host') ?? Astro.request.headers.get('host') ?? 'asaflopez.com'
+const publicLink = `${proto}://${host}${import.meta.env.BASE_URL}quiniela/${q.slug}`
+
+function getParticipantTeams(pid: number) {
+  return assignments
+    .filter(a => a.participant_id === pid)
+    .map(a => ({ ...a, team: getTeam(a.team_code) }))
+    .filter(a => a.team)
+}
+
+function getParticipantClaims(pid: number) {
+  return claims.filter(c => c.participant_id === pid).map(c => c.team_code)
+}
+
+const isFullRandom = q.mode === 'full_random'
+
+// Full random skips the 'draft' phase entirely
+const statusFlow = isFullRandom
+  ? ['setup', 'active', 'finished']
+  : ['setup', 'draft', 'active', 'finished']
+const currentStatusIdx = statusFlow.indexOf(q.status)
+const statusLabels: Record<string,string> = { setup: 'Configurando', draft: 'Reclamo', active: 'En curso', finished: 'Terminada' }
+
+interface StatusStep { key: string; label: string; active: boolean; done: boolean; isLast: boolean }
+const statusSteps: StatusStep[] = statusFlow.map((s, i) => ({
+  key: s,
+  label: statusLabels[s] ?? s,
+  active: i === currentStatusIdx,
+  done: i < currentStatusIdx,
+  isLast: i === statusFlow.length - 1,
+}))
+---
+
+<Layout title={q.name} isAdmin={true}>
+  <div class="max-w-5xl mx-auto px-4 py-8">
+
+    <!-- Header -->
+    <div class="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mb-8">
+      <div>
+        <a href={`${import.meta.env.BASE_URL}admin/dashboard`} class="text-xs text-wc-muted hover:text-wc-gold mb-2 inline-flex items-center gap-1">
+          ← Panel admin
+        </a>
+        <h1 class="font-display text-3xl sm:text-4xl text-wc-gold tracking-wide mt-1">{q.name}</h1>
+        <div class="flex flex-wrap gap-3 mt-2 text-sm text-wc-muted">
+          <span class="flex items-center gap-1"><i class="ph ph-key"></i> Codigo: <strong class="text-white tracking-widest">{q.slug}</strong></span>
+          <span class="flex items-center gap-1"><i class="ph ph-currency-circle-dollar"></i> ${q.base_price} MXN/persona</span>
+          <span class="flex items-center gap-1"><i class="ph-fill ph-trophy text-wc-gold"></i> Bolsa total: <strong class="text-wc-gold">${totalPool} MXN</strong></span>
+          <span class:list={['flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border', isFullRandom ? 'text-blue-400 bg-blue-400/10 border-blue-400/30' : 'text-wc-gold bg-wc-gold/10 border-wc-gold/30']}>
+            <i class:list={['ph text-xs', isFullRandom ? 'ph-fill ph-shuffle' : 'ph-fill ph-hand-pointing']}></i>
+            {isFullRandom ? 'Full Aleatorio' : 'Modo Reclamo'}
+          </span>
+        </div>
+      </div>
+
+      <!-- Public link copy -->
+      <div class="card p-3 text-xs max-w-full sm:max-w-xs">
+        <p class="text-wc-muted mb-1.5">Link público para participantes</p>
+        <div class="flex gap-2 items-center">
+          <code class="flex-1 text-wc-gold truncate text-[10px]">{publicLink}</code>
+          <button
+            type="button"
+            onclick="copyPublicLink(this)"
+            data-link={publicLink}
+            class="px-2 py-1 rounded bg-wc-blue/40 hover:bg-wc-blue/60 transition-colors flex-shrink-0"
+          >
+            <i class="ph ph-clipboard-text"></i>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Status flow -->
+    <div class="card p-4 mb-6">
+      <div class="flex items-center gap-2 flex-wrap">
+        {statusSteps.map((step) => (
+          <div class="flex items-center gap-2">
+            <div class:list={[
+              'flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full border',
+              step.active ? 'bg-wc-gold/20 border-wc-gold text-wc-gold' :
+              step.done   ? 'bg-green-900/30 border-green-600/40 text-green-400' :
+                            'border-wc-border text-wc-muted'
+            ]}>
+              <i class:list={['ph text-xs', step.done ? 'ph-check-circle' : step.active ? 'ph-fill ph-circle' : 'ph-circle']}></i>
+              {step.label}
+            </div>
+            {!step.isLast && <i class="ph ph-arrow-right text-wc-muted text-xs"></i>}
+          </div>
+        ))}
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <!-- LEFT: Participants -->
+      <div class="lg:col-span-2 space-y-4">
+        <div class="flex items-center justify-between">
+          <h2 class="font-semibold text-lg">Participantes ({participants.length})</h2>
+          {q.status === 'setup' && (
+            <button onclick="document.getElementById('modal-add').classList.remove('hidden')" class="btn-primary text-xs px-3 py-1.5 rounded-lg flex items-center gap-1">
+              <i class="ph-bold ph-plus"></i> Agregar
+            </button>
+          )}
+        </div>
+
+        {participants.length === 0 ? (
+          <div class="card p-8 text-center text-wc-muted text-sm">
+            Aún no hay participantes. Agrega al menos 2 para comenzar.
+          </div>
+        ) : (
+          <div class="space-y-3">
+            {participants.map(p => {
+              const pTeams = getParticipantTeams(p.id)
+              const pClaims = getParticipantClaims(p.id)
+              const participantLink = `${publicLink}?token=${p.access_token}`
+              return (
+                <div class="card p-4">
+                  <div class="flex items-start justify-between gap-2 mb-3">
+                    <div>
+                      <div class="flex items-center gap-2">
+                        <span class="font-semibold">{p.name}</span>
+                        {pTeams.length > 0 && (
+                          <span class="text-xs text-wc-muted">({pTeams.length} equipos)</span>
+                        )}
+                      </div>
+                      <p class="text-xs text-wc-muted">{p.email}</p>
+                    </div>
+                    <div class="flex gap-2 flex-shrink-0">
+                      <button
+                        title="Compartir link"
+                        onclick={`shareParticipantLink(this, '${participantLink}', '${p.name}', '${q.name}')`}
+                        class="share-btn text-xs px-2 py-1 rounded transition-colors"
+                        data-link={participantLink}
+                      >
+                        <i class="ph-fill ph-whatsapp-logo"></i>
+                      </button>
+                      {q.status === 'setup' && (
+                        <form action={`${import.meta.env.BASE_URL}api/admin/quiniela/participant`} method="post" onsubmit="return confirm('Eliminar participante?')">
+                          <input type="hidden" name="action" value="delete" />
+                          <input type="hidden" name="participant_id" value={p.id} />
+                          <input type="hidden" name="quiniela_id" value={q.id} />
+                          <button type="submit" class="text-xs px-2 py-1 rounded bg-wc-red/20 hover:bg-wc-red/40 text-wc-red transition-colors">
+                            <i class="ph ph-x"></i>
+                          </button>
+                        </form>
+                      )}
+                    </div>
+                  </div>
+
+                  {pTeams.length > 0 && (
+                    <div class="space-y-1.5">
+                      <div class="flex flex-wrap gap-1.5">
+                        {pTeams.map(a => {
+                          const t = a.team!
+                          const cfg = TIER_CONFIG[t.tier]
+                          return (
+                            <span class:list={[
+                              'team-badge text-[11px]',
+                              a.assignment_type === 'claimed' && 'border-wc-gold/40 bg-wc-gold/5'
+                            ]}>
+                              {t.flag} {t.name}
+                              {a.share_percentage < 100 && <span class="text-wc-gold">{a.share_percentage.toFixed(0)}%</span>}
+                              {a.assignment_type === 'claimed' && <i class="ph-fill ph-star text-wc-gold text-[10px]"></i>}
+                            </span>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {pClaims.length > 0 && (
+                    <p class="text-xs text-wc-muted mt-2">
+                      Reclamados: {pClaims.map(c => getTeam(c)?.name ?? c).join(', ')}
+                    </p>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        )}
+
+        <!-- Action buttons -->
+        <div class="flex flex-wrap gap-3 pt-2">
+          {q.status === 'setup' && participants.length >= 2 && (
+            <form action={`${import.meta.env.BASE_URL}api/admin/quiniela/assign`} method="post">
+              <input type="hidden" name="quiniela_id" value={q.id} />
+              <button type="submit" class="btn-gold px-5 py-2.5 rounded-lg text-sm flex items-center gap-2" onclick="return confirm('Repartir equipos aleatoriamente? Esto limpiara asignaciones previas.')">
+                <i class="ph-fill ph-shuffle"></i> Repartir equipos
+              </button>
+            </form>
+          )}
+
+          {q.status === 'draft' && !isFullRandom && (
+            <form action={`${import.meta.env.BASE_URL}api/admin/quiniela/resolve-claims`} method="post">
+              <input type="hidden" name="quiniela_id" value={q.id} />
+              <button type="submit" class="btn-primary px-5 py-2.5 rounded-lg text-sm flex items-center gap-2" onclick="return confirm('Cerrar el periodo de reclamos y activar la quiniela?')">
+                <i class="ph-fill ph-check-circle"></i> Cerrar reclamos y activar
+              </button>
+            </form>
+          )}
+        </div>
+      </div>
+
+      <!-- RIGHT: Leftover teams + info -->
+      <div class="space-y-4">
+        <div class="card p-4">
+          <h3 class="font-semibold mb-3">Resumen de bolsa</h3>
+          <div class="space-y-2 text-sm">
+            <div class="flex justify-between">
+              <span class="text-wc-muted">Base ({participants.length} × ${q.base_price})</span>
+              <span>${participants.length * q.base_price}</span>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-wc-muted">Extras por reclamos</span>
+              <span class="text-wc-gold">${totalPool - participants.length * q.base_price}</span>
+            </div>
+            <div class="flex justify-between border-t border-wc-border pt-2 font-bold">
+              <span>Total bolsa</span>
+              <span class="text-wc-gold text-lg">${totalPool} MXN</span>
+            </div>
+          </div>
+        </div>
+
+        {leftover.length > 0 && !isFullRandom && (
+          <div class="card p-4">
+            <h3 class="font-semibold mb-1">Equipos disponibles</h3>
+            <p class="text-xs text-wc-muted mb-3">Los participantes pueden reclamarlos con el link</p>
+            <div class="space-y-1.5">
+              {leftover.map(code => {
+                const t = getTeam(code)
+                if (!t) return null
+                const cfg = TIER_CONFIG[t.tier]
+                const teamClaims = claims.filter(c => c.team_code === code)
+                return (
+                  <div class="flex items-center justify-between text-xs p-2 rounded-lg bg-wc-dark/50 border border-wc-border">
+                    <span>{t.flag} {t.name}</span>
+                    <div class="flex items-center gap-2">
+                      {teamClaims.length > 0 && (
+                        <span class="text-blue-400">{teamClaims.length} reclamo{teamClaims.length > 1 ? 's' : ''}</span>
+                      )}
+                      <span class="text-wc-gold">${cfg.extraPrice}</span>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  </div>
+
+  <!-- Acciones de quiniela -->
+  <div class="max-w-5xl mx-auto px-4 pb-10">
+    <details class="group">
+      <summary class="cursor-pointer text-xs text-wc-muted hover:text-white flex items-center gap-1.5 select-none w-fit">
+        <i class="ph ph-caret-right group-open:rotate-90 transition-transform text-xs"></i>
+        Acciones de quiniela
+      </summary>
+      <div class="mt-3 flex flex-wrap gap-3">
+
+        <!-- Resetear -->
+        <form action={`${import.meta.env.BASE_URL}api/admin/quiniela/reset`} method="post"
+          onsubmit="return confirm('Resetear quiniela? Se borran asignaciones y reclamos. Los participantes se mantienen.')">
+          <input type="hidden" name="quiniela_id" value={q.id} />
+          <button type="submit" class="flex items-center gap-2 px-4 py-2 rounded-lg text-sm border border-yellow-600/40 text-yellow-400 bg-yellow-400/5 hover:bg-yellow-400/15 transition-colors">
+            <i class="ph ph-arrow-counter-clockwise"></i> Resetear
+          </button>
+        </form>
+
+        <!-- Copiar participantes -->
+        <form action={`${import.meta.env.BASE_URL}api/admin/quiniela/copy`} method="post"
+          onsubmit="return confirm('Crear copia con los mismos participantes?')">
+          <input type="hidden" name="quiniela_id" value={q.id} />
+          <button type="submit" class="flex items-center gap-2 px-4 py-2 rounded-lg text-sm border border-blue-600/40 text-blue-400 bg-blue-400/5 hover:bg-blue-400/15 transition-colors">
+            <i class="ph ph-copy"></i> Copiar quiniela
+          </button>
+        </form>
+
+        <!-- Eliminar -->
+        <form action={`${import.meta.env.BASE_URL}api/admin/quiniela/delete`} method="post"
+          onsubmit="return confirm('ELIMINAR quiniela permanentemente? Esta accion no se puede deshacer.')">
+          <input type="hidden" name="quiniela_id" value={q.id} />
+          <button type="submit" class="flex items-center gap-2 px-4 py-2 rounded-lg text-sm border border-red-600/40 text-red-400 bg-red-400/5 hover:bg-red-400/15 transition-colors">
+            <i class="ph ph-trash"></i> Eliminar quiniela
+          </button>
+        </form>
+
+      </div>
+    </details>
+  </div>
+
+  <!-- Modal: Add Participant -->
+  <div id="modal-add" class="hidden fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+    <div class="card w-full max-w-sm p-6 rounded-2xl">
+      <div class="flex items-center justify-between mb-5">
+        <h2 class="font-display text-2xl text-wc-gold">AGREGAR</h2>
+        <button onclick="document.getElementById('modal-add').classList.add('hidden')" class="text-wc-muted hover:text-white">
+          <i class="ph ph-x text-xl"></i>
+        </button>
+      </div>
+
+      <form action={`${import.meta.env.BASE_URL}api/admin/quiniela/participant`} method="post" class="space-y-4">
+        <input type="hidden" name="action" value="add" />
+        <input type="hidden" name="quiniela_id" value={q.id} />
+        <div>
+          <label class="block text-sm font-medium mb-1.5">Nombre o apodo</label>
+          <input name="name" type="text" class="input-field" placeholder="ej: el Chino, el Guero, Cobijas" required maxlength="50" />
+        </div>
+        <div>
+          <label class="block text-sm font-medium mb-1.5">Correo electrónico</label>
+          <input name="email" type="email" class="input-field" placeholder="amigo@correo.com" required />
+        </div>
+        <div class="flex gap-3">
+          <button type="button" onclick="document.getElementById('modal-add').classList.add('hidden')" class="flex-1 py-2.5 rounded-lg border border-wc-border text-wc-muted hover:text-white transition-colors">
+            Cancelar
+          </button>
+          <button type="submit" class="flex-1 btn-gold py-2.5 rounded-lg flex items-center justify-center gap-2">
+            <i class="ph-bold ph-plus"></i> Agregar
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</Layout>
+
+<script is:inline>
+const _isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
+
+// Toast flotante reutilizable
+function showToast(text) {
+  const label = document.createElement('span')
+  label.textContent = text
+  label.className = 'fixed bottom-6 left-1/2 -translate-x-1/2 bg-wc-card border border-wc-border text-white text-xs px-4 py-2 rounded-full shadow-lg z-50'
+  document.body.appendChild(label)
+  setTimeout(() => label.remove(), 2000)
+}
+
+// Copia robusta: funciona sobre HTTPS (Clipboard API) y HTTP (fallback execCommand).
+// navigator.clipboard es undefined en contextos no seguros (HTTP), por eso siempre hay fallback.
+function copyText(text) {
+  function fallback() {
+    try {
+      const ta = document.createElement('textarea')
+      ta.value = text
+      ta.style.position = 'fixed'
+      ta.style.top = '0'
+      ta.style.left = '0'
+      ta.style.opacity = '0'
+      document.body.appendChild(ta)
+      ta.focus()
+      ta.select()
+      const ok = document.execCommand('copy')
+      ta.remove()
+      return Promise.resolve(ok)
+    } catch (e) {
+      return Promise.resolve(false)
+    }
+  }
+  if (navigator.clipboard && window.isSecureContext) {
+    return navigator.clipboard.writeText(text).then(() => true).catch(fallback)
+  }
+  return fallback()
+}
+
+// Botón de copiar el link público de la quiniela
+function copyPublicLink(btn) {
+  const link = btn.getAttribute('data-link')
+  copyText(link).then(ok => {
+    const icon = btn.querySelector('i')
+    if (ok) {
+      icon.className = 'ph ph-check'
+      showToast('Link copiado')
+      setTimeout(() => { icon.className = 'ph ph-clipboard-text' }, 2000)
+    } else {
+      showToast('No se pudo copiar — copialo manualmente')
+    }
+  })
+}
+
+// Set icon + style based on device on load
+document.querySelectorAll('.share-btn').forEach(btn => {
+  const icon = btn.querySelector('i')
+  if (_isMobile) {
+    btn.classList.add('bg-green-800/40', 'hover:bg-green-700/60', 'text-green-300')
+    icon.className = 'ph-fill ph-whatsapp-logo'
+    btn.title = 'Compartir por WhatsApp'
+  } else {
+    btn.classList.add('bg-wc-blue/40', 'hover:bg-wc-blue/60', 'text-blue-300')
+    icon.className = 'ph ph-link'
+    btn.title = 'Copiar link al portapapeles'
+  }
+})
+
+function shareParticipantLink(btn, link, nombre, quiniela) {
+  const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
+  const mensaje = `Hola ${nombre}! Te invito a la quiniela "${quiniela}". Entra con tu link personal para ver tus equipos y reclamar los equipos sobrantes:\n${link}`
+
+  if (isMobile) {
+    window.open(`https://wa.me/?text=${encodeURIComponent(mensaje)}`, '_blank')
+    return
+  }
+
+  copyText(link).then(ok => {
+    const icon = btn.querySelector('i')
+    if (!ok) {
+      showToast('No se pudo copiar — copialo manualmente')
+      return
+    }
+    icon.className = 'ph ph-check'
+    btn.classList.remove('text-blue-300')
+    btn.classList.add('text-green-400')
+    btn.title = 'Copiado!'
+    showToast('Copiado al portapapeles')
+    setTimeout(() => {
+      icon.className = 'ph ph-link'
+      btn.classList.remove('text-green-400')
+      btn.classList.add('text-blue-300')
+      btn.title = 'Copiar link al portapapeles'
+    }, 2000)
+  })
+}
+</script>

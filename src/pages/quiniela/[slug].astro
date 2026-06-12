@@ -1,0 +1,424 @@
+---
+import Layout from '../../layouts/Layout.astro'
+import GroupStage from '../../components/GroupStage.astro'
+import Bracket from '../../components/Bracket.astro'
+import MatchCard from '../../components/MatchCard.astro'
+import TeamsTab from '../../components/TeamsTab.astro'
+import {
+  getQuinielBySlug, getParticipants, getAssignments, getClaims, addClaim, removeClaim,
+} from '../../lib/db.js'
+import { getParticipantByToken } from '../../lib/db.js'
+import { getTeam, TIER_CONFIG, TEAMS } from '../../lib/teams.js'
+import { getMatchSchedule } from '../../lib/espn.js'
+import { getLeftoverTeams } from '../../lib/assignment.js'
+
+const { slug } = Astro.params
+const q = await getQuinielBySlug(slug!)
+if (!q) return Astro.redirect(`${import.meta.env.BASE_URL}?error=notfound`)
+
+// Identify participant via token
+const token = Astro.url.searchParams.get('token')
+const participant = token ? await getParticipantByToken(token) : null
+const isParticipant = !!participant && participant.quiniela_id === q.id
+
+// Handle POST: claim / unclaim a team
+if (Astro.request.method === 'POST' && isParticipant && q.status === 'draft') {
+  const form = await Astro.request.formData()
+  const action = form.get('action') as string
+  const teamCode = form.get('team_code') as string
+  if (action === 'claim' && teamCode) await addClaim(q.id, participant!.id, teamCode)
+  if (action === 'unclaim' && teamCode) await removeClaim(q.id, participant!.id, teamCode)
+  return Astro.redirect(Astro.url.pathname + (token ? `?token=${token}&tab=reclamos` : ''))
+}
+
+const tab = Astro.url.searchParams.get('tab') ?? 'grupos'
+const participants = await getParticipants(q.id)
+const assignments  = await getAssignments(q.id)
+const claims       = await getClaims(q.id)
+const leftover     = q.status !== 'setup' ? await getLeftoverTeams(q.id) : []
+
+// Live matches from ESPN
+const { today: matchesToday, week: matchesWeek, previewMode } = await getMatchSchedule(q.tournament)
+
+// My teams (if participant)
+const myTeams = isParticipant
+  ? assignments.filter(a => a.participant_id === participant!.id).map(a => ({ ...a, team: getTeam(a.team_code) }))
+  : []
+const myClaims = isParticipant ? claims.filter(c => c.participant_id === participant!.id).map(c => c.team_code) : []
+
+function assignmentsList() {
+  return assignments.map(a => ({
+    team_code: a.team_code,
+    participant_name: a.participant_name,
+    share_percentage: a.share_percentage,
+  }))
+}
+---
+
+<Layout title={q.name}>
+  <div class="max-w-5xl mx-auto px-4 py-6">
+
+    <!-- Header -->
+    <div class="mb-6">
+      <h1 class="font-display text-3xl sm:text-4xl text-wc-gold tracking-wide">{q.name}</h1>
+      <div class="flex flex-wrap gap-3 mt-2 text-sm text-wc-muted">
+        <span class="flex items-center gap-1"><i class="ph ph-key"></i> {q.slug}</span>
+        <span class="flex items-center gap-1"><i class="ph ph-users"></i> {participants.length} contendientes</span>
+        <span class="flex items-center gap-1">
+          <i class="ph ph-currency-circle-dollar"></i> Bolsa:
+          <span class="text-wc-gold font-semibold">${q.base_price * participants.length}+ MXN</span>
+        </span>
+      </div>
+    </div>
+
+    <!-- Participant greeting -->
+    {isParticipant && (
+      <div class="card p-4 mb-6 border-wc-gold/20 bg-wc-gold/5">
+        <p class="text-sm">
+          ¡Hola, <strong class="text-wc-gold">{participant!.name}</strong>!
+          Tienes <strong>{myTeams.length}</strong> equipos asignados.
+          {q.status === 'draft' && leftover.length > 0 && (
+            <span> Puedes reclamar equipos adicionales.</span>
+          )}
+        </p>
+        {myTeams.length > 0 && (
+          <div class="flex flex-wrap gap-1.5 mt-3">
+            {myTeams.map(a => a.team && (
+              <span class="team-badge text-xs">
+                {a.team.flag} {a.team.name}
+                {a.share_percentage < 100 && <span class="text-wc-gold"> {a.share_percentage.toFixed(0)}%</span>}
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+    )}
+
+    <!-- Tabs -->
+    <div class="flex gap-1 border-b border-wc-border mb-6 overflow-x-auto">
+      {([
+        ['grupos',        'ph-chart-bar',     'Grupos'],
+        ['llaves',        'ph-fill ph-trophy','Llaves'],
+        ['partidos',      'ph-fill ph-soccer-ball', 'Partidos'],
+        ['contendientes', 'ph-users',         'Contendientes'],
+        ['equipos',       'ph-globe',         'Equipos'],
+        ...(isParticipant && q.status === 'draft' && leftover.length > 0 && q.mode !== 'full_random'
+          ? [['reclamos', 'ph-handshake', 'Reclamar']]
+          : []),
+      ] as [string, string, string][]).map(([key, icon, label]) => (
+        <a
+          href={`?${token ? `token=${token}&` : ''}tab=${key}`}
+          class:list={[
+            'px-4 py-2.5 text-sm font-medium whitespace-nowrap transition-colors border-b-2 -mb-px',
+            tab === key
+              ? 'border-wc-gold text-wc-gold'
+              : 'border-transparent text-wc-muted hover:text-white'
+          ]}
+        >
+          <span class="flex items-center gap-1.5">
+            <i class:list={['ph', icon, 'text-sm']}></i>
+            {label}
+          </span>
+        </a>
+      ))}
+    </div>
+
+    <!-- Tab: Grupos -->
+    {tab === 'grupos' && (
+      <GroupStage assignments={assignmentsList()} />
+    )}
+
+    <!-- Tab: Llaves -->
+    {tab === 'llaves' && (
+      <Bracket assignments={assignmentsList()} />
+    )}
+
+    <!-- Tab: Partidos -->
+    {tab === 'partidos' && (
+      <section>
+        <h2 class="font-display text-3xl text-wc-gold mb-2 tracking-wide">PARTIDOS</h2>
+        <p class="text-xs text-wc-muted mb-6">Horarios en tiempo de México (UTC-6)</p>
+
+        {matchesToday.length === 0 && matchesWeek.length === 0 ? (
+          <div class="card p-8 text-center text-wc-muted">
+            <i class="ph ph-broadcast" style="font-size:3rem"></i>
+            <p class="mt-3">No hay partidos disponibles en este momento.</p>
+            <p class="text-sm mt-2">Los datos se obtienen de la API publica de ESPN.</p>
+          </div>
+        ) : (
+          <div class="space-y-8">
+
+            {/* Partidos de hoy */}
+            {matchesToday.length > 0 && (
+              <div>
+                <div class="flex items-center gap-2 mb-4">
+                  <span class="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1 rounded-full bg-wc-gold/20 border border-wc-gold/40 text-wc-gold">
+                    <i class="ph-fill ph-circle text-[8px] animate-pulse"></i> HOY
+                  </span>
+                </div>
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {matchesToday.map(event => (
+                    <MatchCard event={event} />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Partidos de la semana / apertura */}
+            {matchesWeek.length > 0 && (
+              <div>
+                <div class="flex items-center gap-2 mb-4">
+                  <span class="text-sm font-semibold text-wc-muted flex items-center gap-1.5">
+                    <i class="ph ph-calendar-blank"></i>
+                    {previewMode
+                      ? 'Partidos de apertura — 11 jun'
+                      : matchesToday.length > 0
+                        ? 'Esta semana'
+                        : 'Próximos partidos'}
+                  </span>
+                </div>
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 opacity-90">
+                  {matchesWeek.map(event => (
+                    <MatchCard event={event} />
+                  ))}
+                </div>
+              </div>
+            )}
+
+          </div>
+        )}
+      </section>
+    )}
+
+    <!-- Tab: Contendientes -->
+    {tab === 'contendientes' && (
+      <section>
+        <h2 class="font-display text-3xl text-wc-gold mb-6 tracking-wide">CONTENDIENTES</h2>
+        {participants.length === 0 ? (
+          <div class="card p-8 text-center text-wc-muted">La quiniela aún no tiene participantes.</div>
+        ) : (
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {participants.map(p => {
+              const pTeams = assignments
+                .filter(a => a.participant_id === p.id)
+                .map(a => ({ ...a, team: getTeam(a.team_code) }))
+                .filter(a => a.team)
+
+              const fav = pTeams.filter(a => a.team?.tier === 'favorito')
+              const cre = pTeams.filter(a => a.team?.tier === 'creyente')
+              const mal = pTeams.filter(a => a.team?.tier === 'maleta')
+
+              return (
+                <div class="card p-5">
+                  <div class="flex items-center gap-3 mb-4">
+                    <div class="w-10 h-10 rounded-full bg-wc-blue flex items-center justify-center font-display text-xl text-wc-gold">
+                      {p.name[0]!.toUpperCase()}
+                    </div>
+                    <div>
+                      <h3 class="font-semibold">{p.name}</h3>
+                      <p class="text-xs text-wc-muted">{pTeams.length} equipos</p>
+                    </div>
+                  </div>
+
+                  {fav.length > 0 && (
+                    <div class="mb-3">
+                      <p class="text-xs text-wc-gold mb-1.5 flex items-center gap-1"><i class="ph-fill ph-star"></i> Favoritos</p>
+                      <div class="flex flex-wrap gap-1.5">
+                        {fav.map(a => (
+                          <span class="team-badge text-xs">
+                            {a.team!.flag} {a.team!.name}
+                            {a.share_percentage < 100 && <span class="text-wc-gold"> {a.share_percentage.toFixed(0)}%</span>}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {cre.length > 0 && (
+                    <div class="mb-3">
+                      <p class="text-xs text-blue-400 mb-1.5 flex items-center gap-1"><i class="ph-fill ph-fire"></i> Creyentes</p>
+                      <div class="flex flex-wrap gap-1.5">
+                        {cre.map(a => (
+                          <span class="team-badge text-xs">
+                            {a.team!.flag} {a.team!.name}
+                            {a.share_percentage < 100 && <span class="text-wc-gold"> {a.share_percentage.toFixed(0)}%</span>}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {mal.length > 0 && (
+                    <div>
+                      <p class="text-xs text-wc-muted mb-1.5 flex items-center gap-1"><i class="ph ph-briefcase"></i> Maletas</p>
+                      <div class="flex flex-wrap gap-1.5">
+                        {mal.map(a => (
+                          <span class="team-badge text-xs opacity-70">
+                            {a.team!.flag} {a.team!.name}
+                            {a.share_percentage < 100 && <span class="text-wc-gold"> {a.share_percentage.toFixed(0)}%</span>}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {pTeams.length === 0 && (
+                    <p class="text-xs text-wc-muted">Equipos pendientes de asignar</p>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </section>
+    )}
+
+    <!-- Tab: Equipos -->
+    {tab === 'equipos' && (
+      <TeamsTab />
+    )}
+
+    <!-- Tab: Reclamos -->
+    {tab === 'reclamos' && isParticipant && q.status === 'draft' && (
+      <section>
+        <!-- Title + tooltip -->
+        <div class="flex items-start gap-3 mb-2">
+          <h2 class="font-display text-3xl text-wc-gold tracking-wide">RECLAMAR EQUIPOS</h2>
+          <div class="relative mt-1" id="claim-info-wrap">
+            <button
+              id="claim-info-btn"
+              class="text-wc-muted hover:text-wc-gold transition-colors focus:outline-none"
+              aria-label="¿Cómo funciona?"
+              type="button"
+            >
+              <i class="ph ph-info text-2xl"></i>
+            </button>
+            <div
+              id="claim-info-tooltip"
+              class="hidden fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-[min(20rem,calc(100vw-2rem))] card p-4 text-xs text-wc-muted border border-wc-blue/40 shadow-2xl"
+            >
+              <p class="font-semibold text-white mb-2 flex items-center gap-1.5">
+                <i class="ph-fill ph-info text-wc-gold"></i> ¿Cómo funcionan los reclamos?
+              </p>
+              <p class="leading-relaxed">
+                Al reclamar un equipo, tienes que pagar el precio proporcional establecido.
+                Todos pueden reclamar el mismo equipo — esto <strong class="text-white">disminuye el costo por reclamo</strong> entre
+                el número de contendientes. Si el equipo reclamado gana, <strong class="text-white">la bolsa se divide</strong> entre
+                los contendientes que reclamaron al equipo.
+              </p>
+              <button id="claim-info-close" class="mt-3 text-wc-gold underline underline-offset-2" type="button">Cerrar</button>
+            </div>
+          </div>
+        </div>
+        <p class="text-sm text-wc-muted mb-6">
+          Equipos disponibles. Reclámalos pagando el extra — si varios lo reclaman, el costo y la bolsa se dividen.
+        </p>
+
+        {leftover.length === 0 ? (
+          <div class="card p-8 text-center text-wc-muted">
+            No hay equipos disponibles para reclamar.
+          </div>
+        ) : (
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {leftover.map(code => {
+              const team = getTeam(code)
+              if (!team) return null
+              const cfg = TIER_CONFIG[team.tier]
+              const teamClaims = claims.filter(c => c.team_code === code)
+              const isClaimed = myClaims.includes(code)
+              const claimerCount = teamClaims.length
+              const isFullyClaimed = claimerCount >= participants.length
+
+              // Price the current user would pay
+              const myCurrentPrice = isClaimed
+                ? Math.ceil(cfg.extraPrice / claimerCount)
+                : Math.ceil(cfg.extraPrice / (claimerCount + 1))
+              const priceDropped = claimerCount > 0 && !isClaimed
+
+              const claimerNames = teamClaims.map(c => c.participant_name).join(', ')
+
+              return (
+                <div class:list={[
+                  'card p-4 border transition-all',
+                  isClaimed        ? 'border-wc-gold/50 bg-wc-gold/5' :
+                  isFullyClaimed   ? 'border-wc-border opacity-60' :
+                                     'border-wc-border hover:border-wc-blue/50'
+                ]}>
+                  <div class="flex items-center gap-3 mb-3">
+                    <span class="text-3xl">{team.flag}</span>
+                    <div class="flex-1">
+                      <h4 class="font-semibold">{team.name}</h4>
+                      <p class="text-xs text-wc-muted flex items-center gap-1">
+                        <i class:list={['ph', cfg.icon, 'text-xs']}></i> {cfg.label}
+                      </p>
+                    </div>
+                    <div class="text-right">
+                      {priceDropped && (
+                        <p class="text-[10px] text-wc-muted line-through">${cfg.extraPrice}</p>
+                      )}
+                      <p class:list={['font-bold text-lg', isClaimed ? 'text-wc-gold' : priceDropped ? 'text-green-400' : 'text-wc-gold']}>
+                        ${myCurrentPrice}
+                      </p>
+                      <p class="text-[10px] text-wc-muted">MXN</p>
+                    </div>
+                  </div>
+
+                  {claimerCount > 0 && (
+                    <p class="text-xs text-wc-muted mb-2 flex items-center gap-1">
+                      <i class="ph ph-users text-xs"></i>
+                      {claimerCount} reclamo{claimerCount > 1 ? 's' : ''} · {claimerNames}
+                    </p>
+                  )}
+
+                  {isFullyClaimed && !isClaimed ? (
+                    <div class="w-full py-2 rounded-lg text-sm text-center text-wc-muted border border-wc-border bg-wc-dark/50">
+                      <i class="ph ph-lock-simple"></i> Todos reclamaron este equipo
+                    </div>
+                  ) : (
+                    <form method="POST">
+                      <input type="hidden" name="team_code" value={code} />
+                      <input type="hidden" name="action" value={isClaimed ? 'unclaim' : 'claim'} />
+                      <button
+                        type="submit"
+                        class:list={[
+                          'w-full py-2 rounded-lg text-sm font-medium transition-colors',
+                          isClaimed
+                            ? 'bg-wc-red/20 hover:bg-wc-red/40 text-wc-red border border-wc-red/30'
+                            : 'btn-gold'
+                        ]}
+                      >
+                        {isClaimed
+                          ? <span class="flex items-center justify-center gap-1"><i class="ph ph-x"></i> Quitar reclamo</span>
+                          : <span class="flex items-center justify-center gap-1"><i class="ph-bold ph-plus"></i> Reclamar · ${myCurrentPrice} MXN</span>
+                        }
+                      </button>
+                    </form>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </section>
+    )}
+  </div>
+</Layout>
+
+<script is:inline>
+(function () {
+  const btn     = document.getElementById('claim-info-btn')
+  const tooltip = document.getElementById('claim-info-tooltip')
+  const close   = document.getElementById('claim-info-close')
+  if (!btn || !tooltip) return
+
+  function toggle(e) {
+    e.stopPropagation()
+    tooltip.classList.toggle('hidden')
+  }
+  function hide() { tooltip.classList.add('hidden') }
+
+  btn.addEventListener('click', toggle)
+  if (close) close.addEventListener('click', hide)
+  document.addEventListener('click', function (e) {
+    if (!tooltip.contains(e.target) && e.target !== btn) hide()
+  })
+})()
+</script>

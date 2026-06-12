@@ -1,0 +1,140 @@
+---
+interface Props {
+  title: string
+  description?: string
+  isAdmin?: boolean
+}
+const { title, description = 'Quiniela del Mundial 2026 con tus amigos', isAdmin = false } = Astro.props
+---
+<!doctype html>
+<html lang="es" class="scroll-smooth">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content={description} />
+  <title>{title} | Quiniela Mundial 2026</title>
+  <link rel="icon" type="image/svg+xml" href={`${import.meta.env.BASE_URL}favicon.svg`} />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Bebas+Neue&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css" />
+  <link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/fill/style.css" />
+  <link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/bold/style.css" />
+  <style is:global>
+    *, *::before, *::after { box-sizing: border-box; }
+    body {
+      background-color: #06060f;
+      color: #f0f4f8;
+      min-height: 100dvh;
+      font-family: 'Inter', system-ui, sans-serif;
+    }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #0f0f2a; }
+    ::-webkit-scrollbar-thumb { background: #1e3a5f; border-radius: 3px; }
+    .font-display { font-family: 'Bebas Neue', Impact, sans-serif; }
+    .glass {
+      background: rgba(15, 15, 42, 0.7);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(255,255,255,0.06);
+    }
+    .btn-gold {
+      background: linear-gradient(135deg, #f9a825, #ffd700, #f9a825);
+      color: #06060f;
+      font-weight: 700;
+      transition: filter 0.2s, transform 0.1s;
+    }
+    .btn-gold:hover { filter: brightness(1.1); transform: translateY(-1px); }
+    .btn-gold:active { transform: translateY(0); }
+    .btn-primary {
+      background: linear-gradient(135deg, #e63946, #c0392b);
+      color: #fff;
+      font-weight: 600;
+      transition: filter 0.2s;
+    }
+    .btn-primary:hover { filter: brightness(1.15); }
+    .team-badge {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: rgba(30,58,95,0.5); border: 1px solid rgba(249,168,37,0.2);
+      border-radius: 999px; padding: 4px 10px; font-size: 0.8rem;
+    }
+    .card {
+      background: linear-gradient(145deg, #0f0f2a, #141430);
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 1rem;
+    }
+    .input-field {
+      background: rgba(30,58,95,0.2);
+      border: 1px solid rgba(255,255,255,0.1);
+      color: #f0f4f8;
+      border-radius: 0.5rem;
+      padding: 0.6rem 0.9rem;
+      padding-left: var(--input-pl, 0.9rem);
+      width: 100%;
+      transition: border-color 0.2s;
+    }
+    .input-with-icon { --input-pl: 2.25rem; }
+    .input-field:focus {
+      outline: none;
+      border-color: #f9a825;
+      background: rgba(30,58,95,0.4);
+    }
+    .input-field::placeholder { color: #8892a4; }
+    .tab-active {
+      border-bottom: 2px solid #f9a825;
+      color: #f9a825;
+    }
+    @keyframes shimmer {
+      0% { background-position: -200% center; }
+      100% { background-position: 200% center; }
+    }
+    .shimmer {
+      background: linear-gradient(90deg, #0f0f2a 25%, #1e3a5f 50%, #0f0f2a 75%);
+      background-size: 200% auto;
+      animation: shimmer 1.5s linear infinite;
+    }
+    /* Mobile-first nav */
+    @media (max-width: 640px) {
+      .hide-mobile { display: none !important; }
+    }
+  </style>
+</head>
+<body>
+  <nav class="glass sticky top-0 z-50 border-b border-wc-border">
+    <div class="max-w-6xl mx-auto px-4 h-14 flex items-center justify-between">
+      <a href={import.meta.env.BASE_URL} class="flex items-center gap-2">
+        <i class="ph-fill ph-trophy text-wc-gold text-2xl"></i>
+        <span class="font-display text-xl text-wc-gold tracking-wide">QUINIELA 2026</span>
+      </a>
+      <div class="flex items-center gap-3">
+        {isAdmin && (
+          <a href={`${import.meta.env.BASE_URL}admin/dashboard`} class="text-sm text-wc-muted hover:text-white transition-colors">
+            Panel Admin
+          </a>
+          <form action={`${import.meta.env.BASE_URL}api/auth/logout`} method="post">
+            <button type="submit" class="text-xs px-3 py-1.5 rounded-lg border border-wc-border text-wc-muted hover:text-wc-red hover:border-wc-red transition-colors">
+              Salir
+            </button>
+          </form>
+        )}
+        {!isAdmin && (
+          <a href={`${import.meta.env.BASE_URL}admin`} class="text-xs text-wc-muted hover:text-white transition-colors">
+            Admin
+          </a>
+        )}
+      </div>
+    </div>
+  </nav>
+
+  <main>
+    <slot />
+  </main>
+
+  <footer class="mt-16 py-6 border-t border-wc-border text-center text-xs text-wc-muted">
+    <p>Quiniela Mundial 2026 &middot; USA &middot; Canada &middot; Mexico</p>
+    <p class="mt-1 opacity-50">
+      <i class="ph ph-clock"></i> Horarios en tiempo de Mexico (UTC-6)
+    </p>
+  </footer>
+</body>
+</html>

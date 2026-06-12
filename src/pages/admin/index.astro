@@ -1,0 +1,74 @@
+---
+import Layout from '../../layouts/Layout.astro'
+import { getAdminFromRequest } from '../../lib/auth.js'
+import { countAdmins } from '../../lib/db.js'
+
+const admin = await getAdminFromRequest(Astro.request)
+if (admin) return Astro.redirect(`${import.meta.env.BASE_URL}admin/dashboard`)
+
+const noAdmins = await countAdmins() === 0
+if (noAdmins) return Astro.redirect(`${import.meta.env.BASE_URL}admin/setup`)
+
+let error = ''
+if (Astro.url.searchParams.get('error') === '1') {
+  error = 'Usuario o contrasena incorrectos'
+}
+---
+
+<Layout title="Admin - Iniciar Sesion">
+  <div class="min-h-[80vh] flex items-center justify-center px-4">
+    <div class="w-full max-w-sm">
+      <div class="text-center mb-8">
+        <i class="ph-fill ph-trophy text-wc-gold" style="font-size:3.5rem"></i>
+        <h1 class="font-display text-3xl text-wc-gold tracking-wide mt-2">ADMINISTRADOR</h1>
+        <p class="text-wc-muted text-sm mt-1">Panel de Quiniela Mundial 2026</p>
+      </div>
+
+      <div class="card p-6">
+        {error && (
+          <div class="mb-4 p-3 rounded-lg bg-wc-red/10 border border-wc-red/30 text-wc-red text-sm flex items-center gap-2">
+            <i class="ph ph-warning-circle flex-shrink-0"></i>
+            {error}
+          </div>
+        )}
+
+        <form action={`${import.meta.env.BASE_URL}api/auth/login`} method="post" class="space-y-4">
+          <div>
+            <label class="block text-sm font-medium mb-1.5" for="username">Usuario</label>
+            <div class="relative">
+              <i class="ph ph-user absolute left-3 top-1/2 -translate-y-1/2 text-wc-muted"></i>
+              <input
+                id="username" name="username" type="text"
+                class="input-field input-with-icon" placeholder="Nombre de usuario"
+                autocomplete="username" required autofocus
+              />
+            </div>
+          </div>
+          <div>
+            <label class="block text-sm font-medium mb-1.5" for="password">Contrasena</label>
+            <div class="relative">
+              <i class="ph ph-lock absolute left-3 top-1/2 -translate-y-1/2 text-wc-muted"></i>
+              <input
+                id="password" name="password" type="password"
+                class="input-field input-with-icon" placeholder="&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;"
+                autocomplete="current-password" required
+              />
+            </div>
+          </div>
+          <button type="submit" class="btn-gold w-full py-2.5 rounded-lg flex items-center justify-center gap-2">
+            Iniciar Sesion <i class="ph ph-arrow-right"></i>
+          </button>
+        </form>
+      </div>
+
+      <div class="mt-6 space-y-2 text-center text-xs text-wc-muted">
+        <a href={`${import.meta.env.BASE_URL}admin/setup`} class="hover:text-wc-gold transition-colors flex items-center justify-center gap-1">
+          <i class="ph ph-user-plus"></i> No tengo cuenta, crear una
+        </a>
+        <a href={import.meta.env.BASE_URL} class="hover:text-white transition-colors flex items-center justify-center gap-1">
+          <i class="ph ph-arrow-left"></i> Volver al inicio
+        </a>
+      </div>
+    </div>
+  </div>
+</Layout>
