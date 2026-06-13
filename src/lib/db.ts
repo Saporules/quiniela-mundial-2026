@@ -1,15 +1,15 @@
 import { createClient, type Client } from '@libsql/client'
 
-const DB_URL = process.env['DB_PATH']
-  ? `file:${process.env['DB_PATH']}`
-  : 'file:quiniela.db'
+const DB_URL = process.env['TURSO_URL']
+  ?? (process.env['DB_PATH'] ? `file:${process.env['DB_PATH']}` : 'file:quiniela.db')
+const DB_TOKEN = process.env['TURSO_TOKEN']
 
 let _ready: Promise<Client> | null = null
 
 function getClient(): Promise<Client> {
   if (!_ready) {
     _ready = (async () => {
-      const client = createClient({ url: DB_URL })
+      const client = createClient({ url: DB_URL, authToken: DB_TOKEN })
       await initSchema(client)
       return client
     })()
