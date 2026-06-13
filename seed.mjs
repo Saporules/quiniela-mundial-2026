@@ -3,11 +3,11 @@ import bcrypt from 'bcryptjs'
 import { randomBytes } from 'crypto'
 import { join } from 'path'
 
-const DB_URL = process.env.DB_PATH
-  ? `file:${process.env.DB_PATH}`
-  : `file:${join(process.cwd(), 'quiniela.db')}`
+const DB_URL = process.env.TURSO_URL
+  ?? (process.env.DB_PATH ? `file:${process.env.DB_PATH}` : `file:${join(process.cwd(), 'quiniela.db')}`)
+const DB_TOKEN = process.env.TURSO_TOKEN
 
-const client = createClient({ url: DB_URL })
+const client = createClient({ url: DB_URL, authToken: DB_TOKEN })
 
 function generateToken() {
   return randomBytes(16).toString('hex')
