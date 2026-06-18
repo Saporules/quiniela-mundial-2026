@@ -30,25 +30,6 @@ export function sortByFifa(standings: GroupStanding[]): GroupStanding[] {
   })
 }
 
-// ─── simulateGroup: apply match outcomes and return sorted standings ────────
-
-function simulateGroup(
-  standings: GroupStanding[],
-  fixture: RemainingMatch,
-  outcome: MatchOutcome,
-  otherFixture: RemainingMatch,
-  otherOutcome: MatchOutcome,
-): GroupStanding[] {
-  const copy = [...standings]
-
-  // Apply first fixture
-  applyOutcome(copy, fixture, outcome)
-  // Apply second fixture
-  applyOutcome(copy, otherFixture, otherOutcome)
-
-  return sortByFifa(copy)
-}
-
 function applyOutcome(standings: GroupStanding[], fixture: RemainingMatch, outcome: MatchOutcome) {
   const home = standings.find(s => s.teamCode === fixture.home)
   const away = standings.find(s => s.teamCode === fixture.away)
@@ -92,7 +73,7 @@ export function computeTop2(
     return pos <= 1 ? 'qualified' : 'eliminated_top2'
   }
 
-  const scenarios = generateScenarios(standings.length * 2) // all possible match outcomes
+  const scenarios = generateScenarios(fixtures.length) // all possible match outcomes
   const qualifyingScenarios = scenarios.filter(scenario => {
     const simulated = simulateAll(standings, fixtures, scenario)
     const pos = sortByFifa(simulated).findIndex(s => s.teamCode === teamCode)
@@ -144,13 +125,14 @@ export function rankThirds(
     thirds.push({ group: groupName, team: sorted[2] })
   }
 
-  return sortByFifa(thirds.map(t => t.team))
-    .map(team => ({
-      group: Object.entries(allGroupsStandings).find(
-        ([_, s]) => sortByFifa(s)[2]?.teamCode === team.teamCode,
-      )?.[0] || '?',
-      team,
-    }))
+  thirds.sort((a, b) => {
+    if (a.team.points !== b.team.points) return b.team.points - a.team.points
+    if (a.team.gd !== b.team.gd) return b.team.gd - a.team.gd
+    if (a.team.gf !== b.team.gf) return b.team.gf - a.team.gf
+    return getFifaRank(a.team.teamCode) - getFifaRank(b.team.teamCode)
+  })
+
+  return thirds
 }
 
 // ─── bestThirdCodes: top 8 3rd-place teams ─────────────────────────────────────
