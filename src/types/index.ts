@@ -9,6 +9,7 @@ export interface Team {
   flag: string
   confederation: string
   tier: Tier
+  fifaRank: number
 }
 
 export interface AdminUser {
