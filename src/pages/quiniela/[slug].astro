@@ -9,8 +9,10 @@ import {
 } from '../../lib/db.js'
 import { getParticipantByToken } from '../../lib/db.js'
 import { getTeam, TIER_CONFIG, TEAMS } from '../../lib/teams.js'
-import { getMatchSchedule, getGroupStandings } from '../../lib/espn.js'
+import { getMatchSchedule, getGroupStandings, getGroupFixtures } from '../../lib/espn.js'
 import { getLeftoverTeams } from '../../lib/assignment.js'
+import { resolveStatus, formatConditions, bestThirdCodes } from '../../lib/qualification.js'
+import type { GroupQualificationMap } from '../../lib/qualification.js'
 
 const { slug } = Astro.params
 const q = await getQuinielBySlug(slug!)
@@ -38,10 +40,26 @@ const claims       = await getClaims(q.id)
 const leftover     = q.status !== 'setup' ? await getLeftoverTeams(q.id) : []
 
 // Live matches from ESPN
-const [{ today: matchesToday, week: matchesWeek, previewMode }, groupStandings] = await Promise.all([
+const [{ today: matchesToday, week: matchesWeek, previewMode }, groupStandings, groupFixtures] = await Promise.all([
   getMatchSchedule(q.tournament),
   getGroupStandings(q.tournament),
+  getGroupFixtures(q.tournament),
 ])
+
+// Build qualification status map
+const qualificationMap: GroupQualificationMap = {}
+if (Object.keys(groupStandings).length > 0) {
+  for (const [groupName, groupStandingsList] of Object.entries(groupStandings)) {
+    const fixtures = groupFixtures[groupName] ?? []
+    for (const standing of groupStandingsList) {
+      const status = resolveStatus(standing.teamCode, groupStandingsList, groupStandings, fixtures)
+      const conditions = (status === 'contending' || status === 'third') && standing.played >= 2
+        ? formatConditions(standing.teamCode, groupStandingsList, fixtures)
+        : []
+      qualificationMap[standing.teamCode] = { status, conditions }
+    }
+  }
+}
 
 // My teams (if participant)
 const myTeams = isParticipant
@@ -128,7 +146,7 @@ function assignmentsList() {
 
     <!-- Tab: Grupos -->
     {tab === 'grupos' && (
-      <GroupStage assignments={assignmentsList()} standings={groupStandings} />
+      <GroupStage assignments={assignmentsList()} standings={groupStandings} qualificationMap={qualificationMap} />
     )}
 
     <!-- Tab: Llaves -->

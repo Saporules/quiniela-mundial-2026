@@ -1,13 +1,15 @@
 ---
 import { WC2026_GROUPS, getTeam } from '../lib/teams.js'
 import type { GroupStandingsMap, GroupStanding } from '../lib/espn.js'
+import type { GroupQualificationMap } from '../lib/qualification.js'
 
 interface Props {
   assignments: Array<{ team_code: string; participant_name: string; share_percentage: number }>
   standings?: GroupStandingsMap
+  qualificationMap?: GroupQualificationMap
 }
 
-const { assignments, standings = {} } = Astro.props
+const { assignments, standings = {}, qualificationMap = {} } = Astro.props
 
 function getOwners(teamCode: string) {
   return assignments.filter(a => a.team_code === teamCode)
@@ -22,7 +24,6 @@ function getStat(groupName: string, teamCode: string): GroupStanding | null {
 function getOrderedTeams(groupName: string, teamCodes: string[]): string[] {
   const liveGroup = standings[groupName] ?? standings[groupName.toUpperCase()]
   if (!liveGroup || liveGroup.length === 0) return teamCodes
-  // Reorder to match live standings order; teams not yet in standings go at the end
   const ordered = liveGroup.map(s => teamCodes.find(c => c === s.teamCode || c.toUpperCase() === s.teamCode)).filter(Boolean) as string[]
   const rest = teamCodes.filter(c => !ordered.includes(c))
   return [...ordered, ...rest]
@@ -68,22 +69,58 @@ const hasLiveData = Object.keys(standings).length > 0
                 </tr>
               </thead>
               <tbody class="divide-y divide-wc-border/40">
-                {teamCodes.map((code, pos) => {
+                {teamCodes.map((code) => {
                   const team = getTeam(code)
                   const owners = getOwners(code)
                   const stat = getStat(groupName, code)
                   if (!team) return null
-                  const advancing = pos < 2
+
+                  const qual = qualificationMap[code]
+                  const status = qual?.status ?? 'none'
+                  const conditions = qual?.conditions ?? []
+
+                  const rowClass =
+                    status === 'qualified' ? 'bg-green-900/25 border-l-2 border-l-green-500/70' :
+                    status === 'eliminated' ? 'bg-red-900/20 border-l-2 border-l-red-500/60' :
+                    'hover:bg-wc-blue/10'
+
                   return (
-                    <tr class="hover:bg-wc-blue/10 transition-colors">
+                    <tr class:list={['transition-colors', rowClass]}>
                       <td class="py-2 px-1">
                         <div class="flex items-center gap-1.5">
-                          {advancing && (
-                            <div class="w-0.5 h-4 rounded-full bg-wc-gold/60 -ml-1 mr-0.5"></div>
-                          )}
                           <span class="text-base">{team.flag}</span>
-                          <div>
-                            <span class="font-medium">{team.name}</span>
+                          <div class="flex-1 min-w-0">
+                            {conditions.length > 0 ? (
+                              <div class="relative inline-block group">
+                                <span class="font-medium cursor-help underline decoration-dotted decoration-wc-muted/50 underline-offset-2">
+                                  {team.name}
+                                </span>
+                                {status === 'third' && (
+                                  <span class="ml-1 text-[11px]" title="Actualmente uno de los 8 mejores terceros">🥉</span>
+                                )}
+                                <div class="pointer-events-none absolute left-0 top-full mt-1.5 z-50 hidden group-hover:block w-64 rounded-lg bg-wc-dark border border-wc-blue/40 p-3 shadow-2xl text-xs text-wc-muted">
+                                  <p class="font-semibold text-white mb-1.5 flex items-center gap-1">
+                                    <i class="ph ph-question text-wc-gold"></i>
+                                    ¿Qué necesita para clasificar?
+                                  </p>
+                                  <ul class="space-y-1">
+                                    {conditions.map(c => (
+                                      <li class="flex gap-1.5">
+                                        <span class="text-wc-gold mt-px">·</span>
+                                        <span>{c}</span>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              </div>
+                            ) : (
+                              <span class="font-medium">
+                                {team.name}
+                                {status === 'third' && (
+                                  <span class="ml-1 text-[11px]" title="Actualmente uno de los 8 mejores terceros">🥉</span>
+                                )}
+                              </span>
+                            )}
                             {owners.length > 0 && (
                               <div class="flex flex-wrap gap-1 mt-0.5">
                                 {owners.map(o => (
@@ -94,6 +131,12 @@ const hasLiveData = Object.keys(standings).length > 0
                               </div>
                             )}
                           </div>
+                          {status === 'qualified' && (
+                            <span class="text-green-400 text-[10px] shrink-0" title="Clasificado">✓</span>
+                          )}
+                          {status === 'eliminated' && (
+                            <span class="text-red-400 text-[10px] shrink-0" title="Eliminado">✕</span>
+                          )}
                         </div>
                       </td>
                       <td class="text-center px-1 text-wc-muted">{stat?.played ?? 0}</td>
