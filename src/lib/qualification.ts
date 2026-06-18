@@ -61,7 +61,42 @@ function applyOutcome(standings: GroupStanding[], fixture: RemainingMatch, outco
   }
 }
 
+function applyOutcomeWithScore(
+  standings: GroupStanding[],
+  fixture: RemainingMatch,
+  homeGoals: number,
+  awayGoals: number,
+) {
+  const home = standings.find(s => s.teamCode === fixture.home)
+  const away = standings.find(s => s.teamCode === fixture.away)
+  if (!home || !away) return
+
+  home.played += 1
+  away.played += 1
+  home.gf += homeGoals
+  away.gf += awayGoals
+  home.gd += homeGoals - awayGoals
+  away.gd += awayGoals - homeGoals
+
+  if (homeGoals > awayGoals) {
+    home.won += 1
+    away.lost += 1
+    home.points += 3
+  } else if (homeGoals === awayGoals) {
+    home.drawn += 1
+    away.drawn += 1
+    home.points += 1
+    away.points += 1
+  } else {
+    home.lost += 1
+    away.won += 1
+    away.points += 3
+  }
+}
+
 // ─── computeTop2: can team reach top-2? ───────────────────────────────────────
+
+const BOUNDARY_GD = 9
 
 export function computeTop2(
   teamCode: string,
@@ -80,8 +115,22 @@ export function computeTop2(
     return pos <= 1
   })
 
-  if (qualifyingScenarios.length === 0) return 'eliminated_top2'
-  if (qualifyingScenarios.length === scenarios.length) return 'qualified'
+  if (qualifyingScenarios.length === scenarios.length) {
+    // All standard scenarios qualify — check pessimistic boundary
+    const pessimistic = simulateExtreme(teamCode, standings, fixtures, -BOUNDARY_GD, BOUNDARY_GD)
+    const posP = sortByFifa(pessimistic).findIndex(s => s.teamCode === teamCode)
+    if (posP > 1) return 'contending' // Downgrade if pessimistic fails
+    return 'qualified'
+  }
+
+  if (qualifyingScenarios.length === 0) {
+    // No standard scenarios qualify — check optimistic boundary
+    const optimistic = simulateExtreme(teamCode, standings, fixtures, BOUNDARY_GD, -BOUNDARY_GD)
+    const posO = sortByFifa(optimistic).findIndex(s => s.teamCode === teamCode)
+    if (posO <= 1) return 'contending' // Downgrade if optimistic succeeds
+    return 'eliminated_top2'
+  }
+
   return 'contending'
 }
 
@@ -109,6 +158,37 @@ function simulateAll(
   for (let i = 0; i < fixtures.length; i++) {
     applyOutcome(copy, fixtures[i], scenario[i])
   }
+  return copy
+}
+
+function simulateExtreme(
+  teamCode: string,
+  standings: GroupStanding[],
+  fixtures: RemainingMatch[],
+  teamGD: number,
+  otherGD: number,
+): GroupStanding[] {
+  let copy = JSON.parse(JSON.stringify(standings)) as GroupStanding[]
+
+  for (const fixture of fixtures) {
+    if (fixture.home === teamCode) {
+      // Team is home: apply teamGD as GD change (home goals - away goals = teamGD)
+      const homeGoals = teamGD > 0 ? teamGD : 0
+      const awayGoals = teamGD > 0 ? 0 : -teamGD
+      applyOutcomeWithScore(copy, fixture, homeGoals, awayGoals)
+    } else if (fixture.away === teamCode) {
+      // Team is away: apply teamGD as GD change (away goals - home goals = teamGD)
+      const homeGoals = teamGD > 0 ? 0 : -teamGD
+      const awayGoals = teamGD > 0 ? teamGD : 0
+      applyOutcomeWithScore(copy, fixture, homeGoals, awayGoals)
+    } else {
+      // Other fixture: apply otherGD
+      const homeGoals = otherGD > 0 ? otherGD : 0
+      const awayGoals = otherGD > 0 ? 0 : -otherGD
+      applyOutcomeWithScore(copy, fixture, homeGoals, awayGoals)
+    }
+  }
+
   return copy
 }
 
