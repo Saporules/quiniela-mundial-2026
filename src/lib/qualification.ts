@@ -147,6 +147,7 @@ export function bestThirdCodes(allGroupsStandings: GroupStandingsMap): string[] 
 
 export function isThirdEliminated(
   teamCode: string,
+  groupKey: string,
   group: GroupStanding[],
   allGroupsStandings: GroupStandingsMap,
 ): boolean {
@@ -165,9 +166,9 @@ export function isThirdEliminated(
 
   let lockedThirdsAbove = 0
   for (const [gName, gStandings] of Object.entries(allGroupsStandings)) {
-    if (gName === group[0].teamCode?.slice(0, 1)) continue // Skip own group
+    if (gName === groupKey) continue // Skip own group
     if (gStandings.length < 3) continue
-    const thirdStanding = gStandings[2]
+    const thirdStanding = sortByFifa(gStandings)[2]
     if (thirdStanding.played !== 3) continue // Only count finished groups
     if (
       thirdStanding.points > team.points ||
@@ -189,6 +190,7 @@ export function isThirdEliminated(
 
 export function resolveStatus(
   teamCode: string,
+  groupKey: string,
   group: GroupStanding[],
   allGroupsStandings: GroupStandingsMap,
   fixtures: RemainingMatch[],
@@ -203,7 +205,7 @@ export function resolveStatus(
   if (top2Status === 'contending') return 'contending'
 
   // Eliminated from top-2 — check better tercero
-  if (isThirdEliminated(teamCode, group, allGroupsStandings)) return 'eliminated'
+  if (isThirdEliminated(teamCode, groupKey, group, allGroupsStandings)) return 'eliminated'
 
   // Can be better tercero
   return 'third'
