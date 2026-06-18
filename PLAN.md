@@ -2,7 +2,7 @@
 **Rama de origen:** develop
 **Rama de desarrollo:** feature/group-qualification-tooltip
 **Fecha:** 2026-06-17
-**Estado:** COMPLETADO ✓
+**Estado:** APROBADO ✓ (auditoría 2026-06-18)
 
 ---
 
