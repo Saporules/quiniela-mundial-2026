@@ -247,7 +247,7 @@ describe('bestThirdCodes', () => {
 
   it('should return the best thirds in order', () => {
     const groups: GroupStandingsMap = {
-      A: [s('AA',3,9,5,6), s('AB',3,6,2,4), s('ARG',3,7,3,4), s('AD',3,0,-7,0)], // ARG 3rd with 7pts
+      A: [s('AA',3,9,5,6), s('AB',3,8,2,4), s('ARG',3,7,3,4), s('AD',3,0,-7,0)], // ARG 3rd with 7pts (AB=8 is 2nd)
       B: [s('BA',3,9,5,6), s('BB',3,6,2,4), s('BRA',3,4,0,2), s('BD',3,0,-7,0)], // BRA 3rd with 4pts
     }
     const codes = bestThirdCodes(groups)
