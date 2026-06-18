@@ -11,7 +11,7 @@ import { getParticipantByToken } from '../../lib/db.js'
 import { getTeam, TIER_CONFIG, TEAMS } from '../../lib/teams.js'
 import { getMatchSchedule, getGroupStandings, getGroupFixtures } from '../../lib/espn.js'
 import { getLeftoverTeams } from '../../lib/assignment.js'
-import { resolveStatus, formatConditions, bestThirdCodes } from '../../lib/qualification.js'
+import { resolveStatus, formatConditions } from '../../lib/qualification.js'
 import type { GroupQualificationMap } from '../../lib/qualification.js'
 
 const { slug } = Astro.params
@@ -52,7 +52,7 @@ if (Object.keys(groupStandings).length > 0) {
   for (const [groupName, groupStandingsList] of Object.entries(groupStandings)) {
     const fixtures = groupFixtures[groupName] ?? []
     for (const standing of groupStandingsList) {
-      const status = resolveStatus(standing.teamCode, groupStandingsList, groupStandings, fixtures)
+      const status = resolveStatus(standing.teamCode, groupName, groupStandingsList, groupStandings, fixtures)
       const conditions = (status === 'contending' || status === 'third') && standing.played >= 2
         ? formatConditions(standing.teamCode, groupStandingsList, fixtures)
         : []
