@@ -1,208 +1,138 @@
-# PLAN — Tooltip de clasificación en fase de grupos
+# PLAN — Correcciones de auditoría: qualification tooltip
 **Rama de origen:** develop
 **Rama de desarrollo:** feature/group-qualification-tooltip
-**Fecha:** 2026-06-13
-**Estado:** COMPLETADO
+**Fecha:** 2026-06-17
+**Estado:** COMPLETADO ✓
 
 ---
 
 ## Contexto
 
-La tabla de grupos muestra standings en vivo pero no le dice al participante qué necesita para clasificar. Cuando un equipo lleva 2 partidos jugados (1 restante), mostrar:
-- Tooltip al hacer hover sobre el **nombre del equipo** con los escenarios en los que clasifica directamente (top-2), incluyendo rangos de GD cuando hay empate de puntos
-- Colores de fila cuando la clasificación o eliminación es matemáticamente definitiva
-- Emoji 🥉 cuando el equipo está, en el snapshot actual, dentro de los 8 mejores terceros (criterio FIFA)
+La implementación original del tooltip de clasificación fue rechazada en auditoría con dos fallas críticas y cuatro observaciones importantes/menores. Este plan corrige todos los puntos identificados sin alterar la funcionalidad visible ya aprobada.
 
 ---
 
-## Estados y prioridad de resolución
+## Problemas a resolver (en orden de prioridad)
 
-Cada equipo recibe **un** estado de render. Se resuelven en este orden de prioridad estricto (el primero que aplica gana):
+### [CRÍTICO 1] Artefactos binarios SQLite en el repositorio
+`quiniela.db-shm` (32 KB) y `quiniela.db-wal` (1.9 MB) fueron commiteados en `9ff1128`. El `.gitignore` cubre `*.db` pero no los sufijos WAL/SHM. Deben ser desrastreados y los patrones añadidos al `.gitignore`.
 
-| Prioridad | Estado | UI | Condición |
-|---|---|---|---|
-| 1 | `qualified` | Fila verde | Matemáticamente top-2: termina 1ro o 2do en **todos** los escenarios restantes del grupo |
-| 2 | `contending` | Tooltip (sin color) | Aún puede alcanzar top-2: termina top-2 en **algún** escenario (pero no en todos) |
-| 3 | `third` | Emoji 🥉 + nombre | Eliminado de top-2, pero **actualmente** dentro de los 8 mejores terceros (snapshot FIFA) |
-| 4 | `eliminated` | Fila roja | Eliminado de top-2 **Y** matemáticamente imposible ser mejor tercero (ver regla segura abajo) |
-| 5 | `none` | Fila normal | Cualquier otro caso (incl. eliminado de top-2 pero aún puede trepar a mejores terceros, o torneo no iniciado) |
+### [CRÍTICO 2] `isThirdEliminated` — skip de grupo propio incorrecto + lectura del 3ro sin sortear
+Línea 186: `gName === group[0].teamCode?.slice(0,1)` compara la clave del grupo contra la primera letra del código del primer equipo del grupo evaluado. Falla en cualquier grupo donde el nombre no coincida con la inicial del equipo top. Solución: pasar `groupKey` explícitamente y comparar `gName === groupKey`.
+Línea 188: `gStandings[2]` usa el orden crudo de ESPN; `rankThirds` usa `sortByFifa(gStandings)[2]`. Inconsistencia que puede comparar terceros distintos. Solución: usar siempre `sortByFifa(gStandings)[2]`.
 
-**Nota de prioridad:** un equipo que sigue vivo para top-2 muestra el tooltip (prioridad 2), nunca el emoji, aunque ahora mismo esté 3ro en la tabla. El tooltip de top-2 es información más útil y directa que el emoji de tercero.
+### [IMPORTANTE 1] `computeTop2` — falsos positivos en `qualified`/`eliminated_top2` por margen de goles
+`applyOutcome` usa siempre GD=±1. Un equipo puede marcarse verde (`qualified`) pero una derrota abultada (GD=-9) lo dejaría fuera del top-2; igualmente puede marcarse rojo (`eliminated_top2`) cuando una victoria dominante (GD=+9) lo salvaría. Solución: agregar dos verificaciones de frontera tras los escenarios estándar.
 
----
+### [IMPORTANTE 2] `computeTop2` — cuenta de escenarios incorrecta (rendimiento)
+Línea 95: `generateScenarios(standings.length * 2)` genera `3^8 = 6,561` escenarios para un grupo de 4 equipos, cuando con 2 fixtures restantes solo se necesitan `3^2 = 9`. Los resultados son correctos (los escenarios extra son duplicados ignorados) pero la carga computacional es innecesaria. Solución: `generateScenarios(fixtures.length)`.
 
-## Lógica de "mejor tercero" (criterios FIFA)
+### [MENOR 1] Código muerto: `simulateGroup`
+Definida en `qualification.ts:35` y nunca usada (la simulación real la hace `simulateAll`). Eliminar.
 
-Clasifican los **8 mejores** entre los 12 equipos que terminan en 3er lugar de su grupo. Criterios FIFA oficiales, en orden:
+### [MENOR 2] Import sin uso: `bestThirdCodes` en `[slug].astro`
+Importada pero nunca llamada en el código de aplicación (solo en tests). Eliminar.
 
-1. Más puntos en fase de grupos
-2. Mejor diferencia de goles (3 partidos)
-3. Más goles a favor
-4. Mejor fair play (tarjetas amarillas/rojas) — **NO disponible en ESPN API** → omitido
-5. Mejor posición en el Ranking FIFA — **estático, hardcodeado en `teams.ts`**
-
-**Decisión de datos:** implementamos criterios 1-3 (puntos → GD → GF, de ESPN) **+ criterio 5 (ranking FIFA)**. El ranking FIFA es estático durante el Mundial (se congela con el ranking oficial vigente al inicio, abril 2026), así que NO se usa API en vivo: se guarda como campo `fifaRank` en cada equipo de `teams.ts`. La cadena de desempate queda:
-
-```
-puntos → diferencia de gol → goles a favor → fifaRank (menor número = mejor)
-```
-
-El criterio 4 (fair play) se omite porque ESPN no expone tarjetas; la cadena salta de #3 a #5. El caso donde el fair play separaría a dos equipos empatados en puntos/GD/GF (pero con distinto ranking FIFA) es extremadamente raro y se acepta como límite conocido. Esto reemplaza el placeholder arbitrario de "letra de grupo" por el criterio FIFA real.
-
-### Snapshot de mejores terceros (alimenta el emoji 🥉)
-
-```
-function rankThirds(allGroupsStandings):
-  thirds = []
-  for each group G:
-    sorted = sortByFifa(G.standings)        // puntos desc, gd desc, gf desc, fifaRank asc
-    if sorted.length >= 3:
-      thirds.push({ group: G.name, team: sorted[2] })
-  thirds.sort by puntos desc, gd desc, gf desc, fifaRank asc
-  return thirds                              // hasta 12 elementos
-
-bestThirdCodes = rankThirds(...).slice(0, 8).map(t => t.team.teamCode)
-```
-Un equipo recibe `third` (🥉) si su `teamCode ∈ bestThirdCodes` Y quedó eliminado de top-2 (prioridad 3). Es un snapshot que se recalcula en cada render; refleja "ahora mismo estás en zona de clasificación como tercero".
-
-### Regla SEGURA de eliminación de mejor tercero (alimenta el rojo)
-
-Objetivo: **nunca** marcar rojo a un equipo que aún tenga posibilidad matemática. Solo declaramos `eliminated` por terceros cuando es 100% seguro:
-
-```
-function isThirdEliminated(team, group, allGroups):
-  if team.played < 3:
-    return false          // aún tiene partidos: puede sumar puntos y trepar → NUNCA rojo todavía
-  // team.played == 3 (puntos congelados):
-  posInGroup = índice de team en sortByFifa(group)   // 0..3
-  if posInGroup == 3:     // terminó 4to en grupo cerrado → no puede ser tercero
-    return true
-  if posInGroup <= 1:     // 1ro/2do: no aplica esta rama (lo cubre top-2)
-    return false
-  // posInGroup == 2: es el 3ro de un grupo ya cerrado
-  // Contar SOLO terceros YA CONGELADOS (de grupos completamente terminados) que rankean por encima.
-  // Un grupo terminado tiene su 3ro bloqueado y no puede caer; por eso es seguro contarlo.
-  lockedThirdsAbove = count over otros grupos Gx donde:
-       Gx está completamente terminado (sus 4 equipos played == 3)
-       AND el 3ro de Gx rankea por encima de team (puntos→gd→gf→letra)
-  return lockedThirdsAbove >= 8
-```
-Razonamiento: un grupo terminado produce un tercero **bloqueado** que no puede empeorar. Si ya hay ≥8 terceros bloqueados por encima del equipo, este es 9no o peor entre terceros → eliminado con certeza. Grupos sin terminar podrían producir terceros mejores o peores, pero al no contarlos evitamos cualquier falso positivo. Esto es exacto y conservador.
+### [MENOR 3] `rankThirds` — búsqueda O(n²) innecesaria
+El segundo `.map(team => ({ group: find(...) }))` vuelve a recorrer todo el mapa para recuperar la clave de grupo que ya se conocía en el primer loop. Refactorizar para pre-computar `{ group, team }` antes de sortear.
 
 ---
 
 ## Alcance
 
 **Incluido:**
-- Tooltip al hover sobre el nombre del equipo (no la fila completa), solo para `contending` con 1 partido propio restante
-- Condiciones de clasificación directa (top-2) en español, con rangos de GD cuando el desempate lo exige
-- Emoji 🥉 para los 8 mejores terceros del snapshot FIFA (criterios 1-3 + ranking FIFA estático)
-- Fila verde (`qualified`) / fila roja (`eliminated`) según las reglas de arriba
-- `getGroupFixtures()` reutiliza los eventos `pre` del scoreboard ya cacheado (sin llamada extra a ESPN)
-- Campo `fifaRank` estático en `teams.ts` (ranking oficial abril 2026) como desempate #5
+- Corrección de todos los puntos de auditoría anteriores
+- Sin cambios en UI ni comportamiento visible para el usuario
+- Nuevos tests de frontera para `computeTop2` e `isThirdEliminated`
 
 **Fuera de alcance:**
-- Criterio FIFA 4 (fair play / tarjetas): no disponible en ESPN API
-- Ranking FIFA en vivo vía API: innecesario, el ranking es estático durante el torneo
-- Tiebreaker head-to-head dentro del grupo (ESPN no lo provee; usamos GD→GF→fifaRank)
-- Texto de condiciones para "cómo ser mejor tercero" (el emoji es solo snapshot, sin tooltip)
-- Tooltip para equipos con != 1 partido propio restante
+- Criterio FIFA 4 (fair play) — ya en la lista de exclusiones del plan original
+- Cambios en otras partes de la aplicación no relacionadas con `qualification.ts`
 
 ---
 
 ## Pasos atómicos
 
-- [x] 1. `src/lib/teams.ts` — Agregar campo `fifaRank: number` a la interfaz de equipo y poblarlo en los 48 equipos con su posición del ranking FIFA oficial de abril 2026 (menor número = mejor). Exportar helper `getFifaRank(code): number` que devuelve el rank o un valor alto (ej. 999) si el código no existe
+- [x] 1. `.gitignore` + git — Añadir patrones `*.db-shm`, `*.db-wal`, `*.db-journal`; ejecutar `git rm --cached quiniela.db-shm quiniela.db-wal`; commit del cleanup
 
-- [x] 2. `src/lib/espn.ts` — Agregar campo `gf` (goles a favor) a la interfaz `GroupStanding` y a su parser en `getGroupStandings()` (stat `pointsFor`/`goalsFor`/`gf`); agregar `getGroupFixtures(tournament)` que filtra eventos con `status.type.state === 'pre'` del scoreboard (reutiliza caché existente), agrupa por `competitions[0].groups.shortName` y devuelve `Record<string, {home: string, away: string}[]>` (códigos de equipo en mayúsculas)
+- [x] 2. `src/lib/qualification.ts` — Refactor limpieza menor:
+  - Eliminar función `simulateGroup` (dead code)
+  - Refactorizar `rankThirds`: pre-computar `{ group, team }[]` en el primer loop, sortear el array completo, eliminar el `.find()` O(n²) del segundo `.map()`
+  - Corregir `generateScenarios(fixtures.length)` en lugar de `standings.length * 2`
 
-- [x] 3. `src/lib/qualification.ts` (nuevo) — Helpers base + simulación top-2. Tipos: `RemainingMatch {home, away}`, `MatchOutcome 'win'|'draw'|'loss'`, `RenderStatus 'qualified'|'contending'|'third'|'eliminated'|'none'`, `TeamQualification {status: RenderStatus, conditions: string[]}`, `GroupQualificationMap = Record<teamCode, TeamQualification>`. Funciones: `sortByFifa(standings)` (puntos→gd→gf→fifaRank vía `getFifaRank`); `simulateGroup(standings, fixtures, outcomes)` que aplica resultados y devuelve tabla final ordenada; `computeTop2(teamCode, standings, fixtures)` que enumera las 3^R combinaciones (R = fixtures restantes del grupo) y devuelve `'qualified' | 'contending' | 'eliminated_top2'` según en cuántos escenarios el equipo termina en posición 0 o 1
+- [x] 3. `src/lib/qualification.ts` — Corregir `isThirdEliminated`:
+  - Añadir `groupKey: string` como segundo parámetro (antes de `group`)
+  - Reemplazar `if (gName === group[0].teamCode?.slice(0, 1)) continue` por `if (gName === groupKey) continue`
+  - Reemplazar `const thirdStanding = gStandings[2]` por `const thirdStanding = sortByFifa(gStandings)[2]`
 
-- [x] 4. `src/lib/qualification.ts` — Lógica de mejor tercero. `rankThirds(allGroupsStandings)` (devuelve los hasta-12 terceros ordenados por puntos→gd→gf→fifaRank); `bestThirdCodes(allGroupsStandings)` (primeros 8 teamCodes); `isThirdEliminated(teamCode, group, allGroupsStandings)` implementando la **regla segura** (played<3 → false; played==3 con regla de `lockedThirdsAbove >= 8`); `resolveStatus(teamCode, group, allGroupsStandings, fixtures)` que combina todo en el `RenderStatus` final respetando la **prioridad** qualified > contending > third > eliminated > none
+- [x] 4. `src/lib/qualification.ts` — Corregir `resolveStatus`:
+  - Añadir `groupKey: string` como segundo parámetro (antes de `group`)
+  - Pasar `groupKey` a la llamada de `isThirdEliminated`
 
-- [x] 5. `src/lib/qualification.ts` — `formatConditions(teamCode, standings, fixtures)`: solo para equipos `contending` con exactamente 1 partido propio restante. Enumera escenarios donde clasifica y produce frases español: "Gana a [nombre]", "Empata con [nombre]", "Gana a [nombre] con +N de diferencia de gol", "[A] no le gana a [B]", combinaciones unidas con " + ". Usa `getTeam(code)?.name ?? code`. Agrupa por condición propia y deduplica
+- [x] 5. `src/lib/qualification.ts` — Corregir `computeTop2` con verificaciones de frontera:
+  - Extraer `applyOutcome` a una versión que acepta `goalDiff: number` explícito (en lugar de hardcode 1)
+  - Añadir `simulateExtreme(teamCode, standings, fixtures, teamGD, otherGD)`: aplica `teamGD` a los fixtures del equipo y `|otherGD|` (home wins si positivo, away wins si negativo) a los demás
+  - Lógica de frontera para `qualified`: si todos los escenarios estándar califican → verificar con pesimista (teamGD=-9, otherGD=+9); si el pesimista NO clasifica → downgrade a `contending`
+  - Lógica de frontera para `eliminated_top2`: si ningún escenario estándar califica → verificar con optimista (teamGD=+9, otherGD=-9); si el optimista SÍ clasifica → downgrade a `contending`
+  - Constantes: `BOUNDARY_GD = 9`
 
-- [x] 6. `src/pages/quiniela/[slug].astro` — Importar `getGroupFixtures` y `resolveStatus`/`formatConditions`; agregar `getGroupFixtures()` al `Promise.all` existente; construir `qualificationMap: Record<string, GroupQualificationMap>` iterando cada grupo y cada equipo con `resolveStatus(...)` + `formatConditions(...)`; pasar `<GroupStage qualificationMap={qualificationMap} />`
+- [x] 6. `src/pages/quiniela/[slug].astro` — Actualizar callers:
+  - Eliminar `bestThirdCodes` del import
+  - Pasar `groupName` a `resolveStatus(standing.teamCode, groupName, groupStandingsList, groupStandings, fixtures)`
 
-- [x] 7. `src/components/GroupStage.astro` — Aceptar prop `qualificationMap?: Record<string, GroupQualificationMap>`; en cada `<tr>` aplicar `class:list`: `bg-green-900/30 border-l-2 border-l-green-400` si `qualified`, `bg-red-900/20 border-l-2 border-l-red-500` si `eliminated`; en el nombre: prefijo `🥉 ` si `third`; envolver el nombre en `<span class="relative group/tt">` con `<div class="... hidden group-hover/tt:block ...">` listando las `conditions` como `<p>`, solo cuando `status === 'contending' && conditions.length > 0`
+- [x] 7. `src/lib/__tests__/qualification.test.ts` — Actualizar firmas + añadir casos de frontera:
+  - Actualizar todas las llamadas a `isThirdEliminated` con `groupKey` como segundo argumento
+  - Actualizar todas las llamadas a `resolveStatus` con `groupKey` como segundo argumento
+  - Añadir test `isThirdEliminated / should correctly skip own group using group key, not team code initial` — usa claves de grupo realistas ('A'..'L') donde la inicial no coincide con el código del primer equipo
+  - Añadir test `computeTop2 / should downgrade qualified to contending when large loss would drop below top-2`
+  - Añadir test `computeTop2 / should downgrade eliminated_top2 to contending when large win would reach top-2`
 
 ---
 
 ## Casos borde cubiertos
 
-- ESPN no devuelve fixtures: `getGroupFixtures` devuelve `{}`; sin fixtures no se simula → todos los equipos con partidos pendientes quedan `none`; equipos con played==3 igual reciben color (su tabla es final)
-- Empate de puntos entre 3 equipos en un escenario: `sortByFifa` desempata por gd→gf→fifaRank de forma determinista
-- Equipo played==3: standings finales; `computeTop2` con 0 fixtures restantes devuelve qualified/eliminated por posición actual
-- Equipo played 0 o 1: puede entrar a simulación de color pero el **tooltip** solo se genera con exactamente 1 partido propio restante (played==2)
-- Torneo no iniciado (todos en 0): sin fixtures jugados → `none` en todos; sin colores ni emoji
-- `getTeam(code)` undefined: fallback a `code` en el texto
-- Grupo con <3 equipos en el standings (datos parciales de ESPN): `rankThirds` omite ese grupo del pool de terceros
+- Grupo cuya clave ('B') coincide con la inicial del código del primer equipo ('BRA') — skip sigue correcto porque ahora usa clave exacta
+- Grupo cuya clave ('D') NO coincide con la inicial del primer equipo ('DEN' → 'D' sí coincide, 'FRA' → 'F' no) — ahora siempre correcto
+- Grupo terminado con equipo en posición 3 y GD/GF distintos entre ESPN y sortByFifa — ahora usa sortByFifa consistente
+- Equipo con 1 fixture restante: GD=1 dice qualified, GD=9 loss lo deja 3ro → devuelve contending
+- Equipo con 1 fixture restante: GD=1 dice eliminated, GD=9 win lo sube a 2do → devuelve contending
+- Fixtures vacíos: `computeTop2` usa posición actual; sin fixtures, no hay boundary check
+- Fixture del equipo es away (no home): `simulateExtreme` aplica `teamGD` correctamente según posición
 
 ---
 
 ## Dependencias
 
-- `src/lib/espn.ts` — extendido (campo `gf`, función `getGroupFixtures`)
-- `src/lib/teams.ts` — extendido (campo `fifaRank`, helper `getFifaRank`) + leído para nombres en español en tooltips
-- `src/pages/quiniela/[slug].astro` — modificado para construir y pasar `qualificationMap`
-- `src/components/GroupStage.astro` — modificado para UI (colores, emoji, tooltip)
-
----
-
-## Criterios de aceptación
-
-1. Equipo `contending` con 1 partido propio restante: hover sobre su nombre muestra tooltip con condiciones en español
-2. Las condiciones son correctas: "Gana a X" garantiza top-2 verificado por la lógica de puntos en todos los escenarios donde se cumple
-3. Cuando el desempate exige GD, el tooltip incluye "+N de diferencia de gol"
-4. Fila verde: equipo top-2 en **todos** los escenarios restantes
-5. Emoji 🥉: equipo eliminado de top-2 que está entre los 8 mejores terceros del snapshot (puntos→GD→GF→fifaRank)
-6. Fila roja: equipo eliminado de top-2 **Y** `isThirdEliminated` true (regla segura: played==3 + ≥8 terceros congelados por encima, o 4to en grupo cerrado)
-7. Ningún equipo con partidos pendientes (played<3) se pinta de rojo por la rama de mejor tercero
-8. Si ESPN no devuelve fixtures, la página no rompe; los equipos con played==3 conservan su color
-9. La prioridad de estados se respeta: un equipo que aún puede llegar a top-2 muestra tooltip, no emoji
-10. El desempate de terceros aplica criterios FIFA 1-3 (puntos→GD→GF) + criterio 5 (fifaRank estático); el criterio 4 (fair play) se omite por falta de datos
-11. `fifaRank` está poblado para los 48 equipos del torneo con el ranking oficial de abril 2026
+- `src/lib/qualification.ts` — archivo principal afectado
+- `src/lib/__tests__/qualification.test.ts` — firmas de test a actualizar
+- `src/pages/quiniela/[slug].astro` — caller a actualizar
+- `.gitignore` — patrones a añadir
 
 ---
 
 ## Tests generados
 
-- [ ] `src/lib/__tests__/qualification.test.ts` — Suite principal: lógica de clasificación
-  - [ ] `sortByFifa / should sort by points descending`
-  - [ ] `sortByFifa / should sort by GD when points are equal`
-  - [ ] `sortByFifa / should sort by GF when points and GD are equal`
-  - [ ] `sortByFifa / should sort by fifaRank ascending when points GD GF are all equal`
-  - [ ] `sortByFifa / should return empty array unchanged`
-  - [ ] `sortByFifa / should not mutate the original array`
-  - [ ] `computeTop2 / should return qualified when team finishes top-2 in ALL scenarios`
-  - [ ] `computeTop2 / should return eliminated_top2 when team cannot finish top-2 in ANY scenario`
-  - [ ] `computeTop2 / should return contending when team can reach top-2 in some but not all scenarios`
-  - [ ] `computeTop2 / should return qualified when played==3 and currently position 0 or 1`
-  - [ ] `computeTop2 / should return eliminated_top2 when played==3 and currently position 2 or 3`
-  - [ ] `computeTop2 / should handle multiple remaining fixtures without crashing`
-  - [ ] `rankThirds / should return exactly one third-place team per group`
-  - [ ] `rankThirds / should correctly identify the 3rd-place finisher in each group`
-  - [ ] `rankThirds / should rank thirds by points descending`
-  - [ ] `rankThirds / should use fifaRank as tiebreaker when points GD GF are equal`
-  - [ ] `rankThirds / should skip groups with fewer than 3 teams`
-  - [ ] `bestThirdCodes / should return at most 8 team codes`
-  - [ ] `bestThirdCodes / should return the best thirds in order`
-  - [ ] `isThirdEliminated / should return false when evaluated team has played fewer than 3 games`
-  - [ ] `isThirdEliminated / should return true when team finished 4th in a completed group`
-  - [ ] `isThirdEliminated / should return true when 8+ locked thirds have better stats`
-  - [ ] `isThirdEliminated / should return false when only 7 locked thirds rank above`
-  - [ ] `isThirdEliminated / should NOT count groups not fully finished as locked thirds`
-  - [ ] `resolveStatus / should return qualified for a team guaranteed top-2`
-  - [ ] `resolveStatus / should return eliminated for 4th-place team in completed group`
-  - [ ] `resolveStatus / should return contending over third when team can still reach top-2`
-  - [ ] `resolveStatus / should return third when eliminated from top-2 but in best-8 thirds`
-  - [ ] `resolveStatus / should respect priority: qualified > contending > third > eliminated`
-  - [ ] `formatConditions / should return array of strings when contending with 1 game remaining`
-  - [ ] `formatConditions / should return empty array for teams with 3 games played`
-  - [ ] `formatConditions / should produce strings containing the opponent name`
-  - [ ] `formatConditions / should include GD condition text when winning is not enough`
-  - [ ] `formatConditions / should produce combined conditions with "+" separator`
-  - [ ] `formatConditions / should use team code as fallback when getTeam returns undefined`
-  - [ ] `getFifaRank / should return correct rank for known WC2026 teams`
-  - [ ] `getFifaRank / should return a high fallback value for unknown team codes`
-  - [ ] `getFifaRank / should have fifaRank populated for all 48 WC2026 teams`
+- [x] `src/lib/__tests__/qualification.test.ts` — Suite actualizada (41 tests total)
+  - [x] `computeTop2 / should downgrade qualified to contending when a large loss would drop team below top-2` *(nuevo — boundary GD)*
+  - [x] `computeTop2 / should downgrade eliminated_top2 to contending when a large win would reach top-2` *(nuevo — boundary GD)*
+  - [x] `isThirdEliminated / should skip own group using groupKey and identify third via sortByFifa, not raw index` *(nuevo — corrección crítica)*
+  - [x] Todos los `isThirdEliminated` existentes actualizados con firma `(teamCode, groupKey, group, allGroups)`
+  - [x] Todos los `resolveStatus` existentes actualizados con firma `(teamCode, groupKey, group, allGroups, fixtures)`
+
+Estado inicial: **13 failing / 28 passing** (red correcto — implementación pendiente)
+
+---
+
+## Criterios de aceptación
+
+1. `quiniela.db-shm` y `quiniela.db-wal` ya no están trackeados por git (`git ls-files | grep db` no los muestra)
+2. `.gitignore` incluye `*.db-shm`, `*.db-wal`, `*.db-journal`
+3. `isThirdEliminated('CZE', 'A', evalGroup, allGroups)` con grupo 'A' y primer equipo 'BRA' (inicial 'B' ≠ 'A') salta correctamente el grupo propio
+4. La lectura del 3ro en `isThirdEliminated` usa `sortByFifa(gStandings)[2]` en todos los casos
+5. `computeTop2` con un equipo que en GD=1 está siempre top-2 pero en GD=-9 cae a 3ro → devuelve `contending`, no `qualified`
+6. `computeTop2` con un equipo que en GD=1 nunca llega a top-2 pero en GD=+9 sí → devuelve `contending`, no `eliminated_top2`
+7. `computeTop2` genera exactamente `3^fixtures.length` escenarios (no `3^(standings.length * 2)`)
+8. `simulateGroup` eliminada del módulo (no aparece en el diff final)
+9. `bestThirdCodes` no aparece en los imports de `[slug].astro`
+10. Todos los tests pasan (≥41/41 — 38 existentes + 3 nuevos de frontera)
+11. Build limpio sin errores TypeScript
