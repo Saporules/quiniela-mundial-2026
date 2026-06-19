@@ -243,6 +243,16 @@ function toDateParam(d: Date): string {
   return d.toISOString().slice(0, 10).replace(/-/g, '')
 }
 
+// Date param in Mexico City timezone — avoids UTC midnight rollovers cutting off evening games
+function toMexDateParam(d: Date): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: MEXICO_TZ,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(d).replace(/-/g, '')
+}
+
 // Known tournament start dates — if today is before this, show the opening week instead
 const TOURNAMENT_START: Record<string, string> = {
   world_cup_2026: '2026-06-11',
@@ -273,20 +283,21 @@ export async function getMatchSchedule(tournament = 'world_cup_2026'): Promise<{
     }
   }
 
-  // Today's matches
+  // Today's matches — use Mexico City date so evening games don't roll over to UTC tomorrow
+  const todayMex = toMexDateParam(now)
   const todayData = await fetchWithCache<ESPNScoreboard>(
-    `${ESPN_BASE}/${slug}/scoreboard?dates=${toDateParam(now)}`,
-    `scoreboard:${slug}:${toDateParam(now)}`,
+    `${ESPN_BASE}/${slug}/scoreboard?dates=${todayMex}`,
+    `scoreboard:${slug}:${todayMex}`,
     3,
   )
   const today = todayData?.events ?? []
 
-  // Next 7 days (tomorrow → +7)
-  const from = new Date(now); from.setDate(from.getDate() + 1)
-  const to   = new Date(now); to.setDate(to.getDate() + 7)
+  // Next 7 days (tomorrow → +7) in Mexico City time
+  const from = new Date(now.getTime() + 86_400_000)
+  const to   = new Date(now.getTime() + 7 * 86_400_000)
   const weekData = await fetchWithCache<ESPNScoreboard>(
-    `${ESPN_BASE}/${slug}/scoreboard?dates=${toDateParam(from)}-${toDateParam(to)}&limit=50`,
-    `scoreboard:${slug}:week:${toDateParam(now)}`,
+    `${ESPN_BASE}/${slug}/scoreboard?dates=${toMexDateParam(from)}-${toMexDateParam(to)}&limit=50`,
+    `scoreboard:${slug}:week:${todayMex}`,
     60,
   )
   const week = weekData?.events ?? []
