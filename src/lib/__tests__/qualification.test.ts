@@ -208,6 +208,57 @@ describe('computeTop2', () => {
   })
 
   /*
+   * ── Mid-tournament (fixtures=[]) tests ───────────────────────────────────────
+   *
+   * ESPN's scoreboard only returns TODAY's matches. Groups that played yesterday
+   * and play again in future rounds return fixtures=[]. computeTop2 must NOT treat
+   * this as a finished group — it should use max-possible-points analysis instead.
+   */
+  describe('with empty fixtures in an in-progress group', () => {
+    it('should return qualified when fewer than 2 teams can reach current leader points', () => {
+      // MEX: 6pts after 2 games. Only KOR (3+3=6pts max) can reach 6. CZE/RSA max 4pts.
+      // → 1 team can reach 6 → fewer than 2 → qualified
+      const group = [
+        s('MEX', 2, 6, +3, 4, 2, 0, 0),
+        s('KOR', 2, 3,  0, 2, 1, 0, 1),
+        s('CZE', 2, 1, -1, 1, 0, 1, 1),
+        s('RSA', 2, 1, -2, 1, 0, 1, 1),
+      ]
+      expect(computeTop2('MEX', group, [])).toBe('qualified')
+    })
+
+    it('should return contending when all 4 teams share the same points after 1 game', () => {
+      // Group G: 4-way draw, all 1pt after 1 game — nobody can be declared safe
+      const group = [
+        s('BEL', 1, 1, 0, 0, 0, 1, 0),
+        s('IRN', 1, 1, 0, 0, 0, 1, 0),
+        s('EGY', 1, 1, 0, 0, 0, 1, 0),
+        s('NZL', 1, 1, 0, 0, 0, 1, 0),
+      ]
+      expect(computeTop2('BEL', group, [])).toBe('contending')
+      expect(computeTop2('IRN', group, [])).toBe('contending')
+      expect(computeTop2('NZL', group, [])).toBe('contending')
+    })
+
+    it('should return eliminated_top2 when 2+ teams already exceed our maximum possible points', () => {
+      // T1 and T2 both at 6pts. BOT has 0pts with 1 game left (max 3pts). 6 > 3 for both T1 and T2.
+      const group = [
+        s('T1',  2, 6, +4, 5, 2, 0, 0),
+        s('T2',  2, 6, +3, 4, 2, 0, 0),
+        s('T3',  2, 3, -3, 2, 1, 0, 1),
+        s('BOT', 2, 0, -4, 1, 0, 0, 2),
+      ]
+      expect(computeTop2('BOT', group, [])).toBe('eliminated_top2')
+    })
+
+    it('should still use final standings when all teams have played 3 games', () => {
+      // Exact same as the finished-group tests above — must still work
+      expect(computeTop2('FRA', groupB_final, [])).toBe('qualified')
+      expect(computeTop2('BEL', groupB_final, [])).toBe('eliminated_top2')
+    })
+  })
+
+  /*
    * ── Boundary GD tests (new) ────────────────────────────────────────────────
    *
    * computeTop2 uses GD=±1 for standard scenarios. A "qualified" result must
