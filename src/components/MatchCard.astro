@@ -40,11 +40,11 @@ const group = comp.groups?.name
         </span>
       ) : (
         <div class="flex items-center gap-2">
-          <span class:list={['font-display text-2xl', home?.winner ? 'text-white' : 'text-wc-muted']}>
+          <span class:list={['font-display text-2xl', status === 'in' || home?.winner ? 'text-white' : 'text-wc-muted']}>
             {home?.score ?? '0'}
           </span>
           <span class="text-wc-muted font-display text-xl">:</span>
-          <span class:list={['font-display text-2xl', away?.winner ? 'text-white' : 'text-wc-muted']}>
+          <span class:list={['font-display text-2xl', status === 'in' || away?.winner ? 'text-white' : 'text-wc-muted']}>
             {away?.score ?? '0'}
           </span>
         </div>
