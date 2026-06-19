@@ -1,4 +1,4 @@
-import type { GroupStanding, GroupStandingsMap } from './espn.js'
+import type { GroupStanding, GroupStandingsMap, CompletedMatch } from './espn.js'
 import { getFifaRank, getTeam } from './teams.js'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -19,11 +19,64 @@ export interface TeamQualification {
 
 export type GroupQualificationMap = Record<string, TeamQualification>
 
-// ─── sortByFifa: order standings by puntos → GD → GF → fifaRank ──────────────
+// ─── sortByFifa: order standings by pts → H2H pts → H2H GD → H2H GF → GD → GF → fifaRank ──
 
-export function sortByFifa(standings: GroupStanding[]): GroupStanding[] {
-  return [...standings].sort((a, b) => {
-    if (a.points !== b.points) return b.points - a.points
+export function sortByFifa(standings: GroupStanding[], allMatches?: CompletedMatch[]): GroupStanding[] {
+  const byPoints = new Map<number, GroupStanding[]>()
+  for (const st of standings) {
+    const g = byPoints.get(st.points) ?? []
+    g.push(st)
+    byPoints.set(st.points, g)
+  }
+
+  const result: GroupStanding[] = []
+  for (const pts of [...byPoints.keys()].sort((a, b) => b - a)) {
+    const group = byPoints.get(pts)!
+    if (group.length === 1 || !allMatches?.length) {
+      result.push(...sortOverall(group))
+    } else {
+      const codes = new Set(group.map(st => st.teamCode))
+      const h2hMatches = allMatches.filter(m => codes.has(m.home) && codes.has(m.away))
+      if (h2hMatches.length > 0) {
+        result.push(...sortWithH2H(group, h2hMatches))
+      } else {
+        result.push(...sortOverall(group))
+      }
+    }
+  }
+  return result
+}
+
+function sortOverall(group: GroupStanding[]): GroupStanding[] {
+  return [...group].sort((a, b) => {
+    if (a.gd !== b.gd) return b.gd - a.gd
+    if (a.gf !== b.gf) return b.gf - a.gf
+    return getFifaRank(a.teamCode) - getFifaRank(b.teamCode)
+  })
+}
+
+function sortWithH2H(group: GroupStanding[], h2hMatches: CompletedMatch[]): GroupStanding[] {
+  const h2h: Record<string, { pts: number; gd: number; gf: number }> = {}
+  for (const st of group) h2h[st.teamCode] = { pts: 0, gd: 0, gf: 0 }
+
+  for (const m of h2hMatches) {
+    const hh = h2h[m.home]!
+    const ah = h2h[m.away]!
+    hh.gf += m.homeScore
+    ah.gf += m.awayScore
+    hh.gd += m.homeScore - m.awayScore
+    ah.gd += m.awayScore - m.homeScore
+    if (m.homeScore > m.awayScore) hh.pts += 3
+    else if (m.homeScore === m.awayScore) { hh.pts += 1; ah.pts += 1 }
+    else ah.pts += 3
+  }
+
+  return [...group].sort((a, b) => {
+    const ah2h = h2h[a.teamCode]!
+    const bh2h = h2h[b.teamCode]!
+    if (ah2h.pts !== bh2h.pts) return bh2h.pts - ah2h.pts
+    if (ah2h.gd !== bh2h.gd) return bh2h.gd - ah2h.gd
+    if (ah2h.gf !== bh2h.gf) return bh2h.gf - ah2h.gf
     if (a.gd !== b.gd) return b.gd - a.gd
     if (a.gf !== b.gf) return b.gf - a.gf
     return getFifaRank(a.teamCode) - getFifaRank(b.teamCode)
@@ -102,32 +155,36 @@ export function computeTop2(
   teamCode: string,
   standings: GroupStanding[],
   fixtures: RemainingMatch[],
+  pastResults?: CompletedMatch[],
 ): 'qualified' | 'contending' | 'eliminated_top2' {
   if (fixtures.length === 0) {
-    const pos = sortByFifa(standings).findIndex(s => s.teamCode === teamCode)
+    const pos = sortByFifa(standings, pastResults).findIndex(s => s.teamCode === teamCode)
     return pos <= 1 ? 'qualified' : 'eliminated_top2'
   }
 
-  const scenarios = generateScenarios(fixtures.length) // all possible match outcomes
+  const scenarios = generateScenarios(fixtures.length)
   const qualifyingScenarios = scenarios.filter(scenario => {
-    const simulated = simulateAll(standings, fixtures, scenario)
-    const pos = sortByFifa(simulated).findIndex(s => s.teamCode === teamCode)
+    const { standings: sim, results: simResults } = simulateAllWithResults(standings, fixtures, scenario)
+    const allResults = pastResults ? [...pastResults, ...simResults] : simResults
+    const pos = sortByFifa(sim, allResults).findIndex(s => s.teamCode === teamCode)
     return pos <= 1
   })
 
   if (qualifyingScenarios.length === scenarios.length) {
     // All standard scenarios qualify — check pessimistic boundary
-    const pessimistic = simulateExtreme(teamCode, standings, fixtures, -BOUNDARY_GD, BOUNDARY_GD)
-    const posP = sortByFifa(pessimistic).findIndex(s => s.teamCode === teamCode)
-    if (posP > 1) return 'contending' // Downgrade if pessimistic fails
+    const { standings: pesStandings, results: pesResults } = simulateExtremeWithResults(teamCode, standings, fixtures, -BOUNDARY_GD, BOUNDARY_GD)
+    const allPesResults = pastResults ? [...pastResults, ...pesResults] : pesResults
+    const posP = sortByFifa(pesStandings, allPesResults).findIndex(s => s.teamCode === teamCode)
+    if (posP > 1) return 'contending'
     return 'qualified'
   }
 
   if (qualifyingScenarios.length === 0) {
     // No standard scenarios qualify — check optimistic boundary
-    const optimistic = simulateExtreme(teamCode, standings, fixtures, BOUNDARY_GD, -BOUNDARY_GD)
-    const posO = sortByFifa(optimistic).findIndex(s => s.teamCode === teamCode)
-    if (posO <= 1) return 'contending' // Downgrade if optimistic succeeds
+    const { standings: optStandings, results: optResults } = simulateExtremeWithResults(teamCode, standings, fixtures, BOUNDARY_GD, -BOUNDARY_GD)
+    const allOptResults = pastResults ? [...pastResults, ...optResults] : optResults
+    const posO = sortByFifa(optStandings, allOptResults).findIndex(s => s.teamCode === teamCode)
+    if (posO <= 1) return 'contending'
     return 'eliminated_top2'
   }
 
@@ -168,28 +225,53 @@ function simulateExtreme(
   teamGD: number,
   otherGD: number,
 ): GroupStanding[] {
-  let copy = JSON.parse(JSON.stringify(standings)) as GroupStanding[]
+  return simulateExtremeWithResults(teamCode, standings, fixtures, teamGD, otherGD).standings
+}
+
+function simulateAllWithResults(
+  standings: GroupStanding[],
+  fixtures: RemainingMatch[],
+  scenario: MatchOutcome[],
+): { standings: GroupStanding[]; results: CompletedMatch[] } {
+  const copy = JSON.parse(JSON.stringify(standings)) as GroupStanding[]
+  const results: CompletedMatch[] = []
+  for (let i = 0; i < fixtures.length; i++) {
+    const outcome = scenario[i]!
+    const homeScore = outcome === 'win' ? 1 : 0
+    const awayScore = outcome === 'loss' ? 1 : 0
+    applyOutcome(copy, fixtures[i]!, outcome)
+    results.push({ home: fixtures[i]!.home, away: fixtures[i]!.away, homeScore, awayScore })
+  }
+  return { standings: copy, results }
+}
+
+function simulateExtremeWithResults(
+  teamCode: string,
+  standings: GroupStanding[],
+  fixtures: RemainingMatch[],
+  teamGD: number,
+  otherGD: number,
+): { standings: GroupStanding[]; results: CompletedMatch[] } {
+  const copy = JSON.parse(JSON.stringify(standings)) as GroupStanding[]
+  const results: CompletedMatch[] = []
 
   for (const fixture of fixtures) {
+    let homeGoals: number, awayGoals: number
     if (fixture.home === teamCode) {
-      // Team is home: apply teamGD as GD change (home goals - away goals = teamGD)
-      const homeGoals = teamGD > 0 ? teamGD : 0
-      const awayGoals = teamGD > 0 ? 0 : -teamGD
-      applyOutcomeWithScore(copy, fixture, homeGoals, awayGoals)
+      homeGoals = teamGD > 0 ? teamGD : 0
+      awayGoals = teamGD > 0 ? 0 : -teamGD
     } else if (fixture.away === teamCode) {
-      // Team is away: apply teamGD as GD change (away goals - home goals = teamGD)
-      const homeGoals = teamGD > 0 ? 0 : -teamGD
-      const awayGoals = teamGD > 0 ? teamGD : 0
-      applyOutcomeWithScore(copy, fixture, homeGoals, awayGoals)
+      homeGoals = teamGD > 0 ? 0 : -teamGD
+      awayGoals = teamGD > 0 ? teamGD : 0
     } else {
-      // Other fixture: apply otherGD
-      const homeGoals = otherGD > 0 ? otherGD : 0
-      const awayGoals = otherGD > 0 ? 0 : -otherGD
-      applyOutcomeWithScore(copy, fixture, homeGoals, awayGoals)
+      homeGoals = otherGD > 0 ? otherGD : 0
+      awayGoals = otherGD > 0 ? 0 : -otherGD
     }
+    applyOutcomeWithScore(copy, fixture, homeGoals, awayGoals)
+    results.push({ home: fixture.home, away: fixture.away, homeScore: homeGoals, awayScore: awayGoals })
   }
 
-  return copy
+  return { standings: copy, results }
 }
 
 // ─── rankThirds: get 3rd-place teams ordered by FIFA criteria ────────────────
@@ -230,6 +312,7 @@ export function isThirdEliminated(
   groupKey: string,
   group: GroupStanding[],
   allGroupsStandings: GroupStandingsMap,
+  allPastResults?: Record<string, CompletedMatch[]>,
 ): boolean {
   const team = group.find(s => s.teamCode === teamCode)
   if (!team) return true
@@ -238,7 +321,7 @@ export function isThirdEliminated(
   if (team.played < 3) return false
 
   // If played 3 and in position 4, definitely eliminated
-  const pos = sortByFifa(group).findIndex(s => s.teamCode === teamCode)
+  const pos = sortByFifa(group, allPastResults?.[groupKey]).findIndex(s => s.teamCode === teamCode)
   if (pos === 3) return true
 
   // Position 3: check if ≥8 locked thirds rank above
@@ -248,7 +331,7 @@ export function isThirdEliminated(
   for (const [gName, gStandings] of Object.entries(allGroupsStandings)) {
     if (gName === groupKey) continue // Skip own group
     if (gStandings.length < 3) continue
-    const thirdStanding = sortByFifa(gStandings)[2]
+    const thirdStanding = sortByFifa(gStandings, allPastResults?.[gName])[2]
     if (thirdStanding.played !== 3) continue // Only count finished groups
     if (
       thirdStanding.points > team.points ||
@@ -274,18 +357,19 @@ export function resolveStatus(
   group: GroupStanding[],
   allGroupsStandings: GroupStandingsMap,
   fixtures: RemainingMatch[],
+  allPastResults?: Record<string, CompletedMatch[]>,
 ): RenderStatus {
   const team = group.find(s => s.teamCode === teamCode)
   if (!team) return 'none'
 
   // Check top-2 status
-  const top2Status = computeTop2(teamCode, group, fixtures)
+  const top2Status = computeTop2(teamCode, group, fixtures, allPastResults?.[groupKey])
 
   if (top2Status === 'qualified') return 'qualified'
   if (top2Status === 'contending') return 'contending'
 
   // Eliminated from top-2 — check better tercero
-  if (isThirdEliminated(teamCode, groupKey, group, allGroupsStandings)) return 'eliminated'
+  if (isThirdEliminated(teamCode, groupKey, group, allGroupsStandings, allPastResults)) return 'eliminated'
 
   // Can be better tercero
   return 'third'

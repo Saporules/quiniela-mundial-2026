@@ -111,6 +111,13 @@ export interface GroupStanding {
 
 export type GroupStandingsMap = Record<string, GroupStanding[]>
 
+export interface CompletedMatch {
+  home: string
+  away: string
+  homeScore: number
+  awayScore: number
+}
+
 export async function getGroupStandings(tournament = 'world_cup_2026'): Promise<GroupStandingsMap> {
   const raw = await getStandings(tournament) as any
   if (!raw) return {}
@@ -190,6 +197,41 @@ export async function getGroupFixtures(
   }
 
   return fixtures
+}
+
+export async function getGroupResults(
+  tournament = 'world_cup_2026',
+): Promise<Record<string, CompletedMatch[]>> {
+  const data = await getScoreboard(tournament)
+  const results: Record<string, CompletedMatch[]> = {}
+
+  if (!data?.events) return results
+
+  for (const event of data.events) {
+    if (!event.status.type.completed) continue
+
+    const comp = event.competitions?.[0]
+    if (!comp?.groups || !comp.competitors || comp.competitors.length < 2) continue
+
+    const groupName =
+      (comp.groups?.shortName ?? comp.groups?.name ?? '').replace(/^Group\s*/i, '') || '?'
+
+    const homeComp = comp.competitors.find(c => c.homeAway === 'home')
+    const awayComp = comp.competitors.find(c => c.homeAway === 'away')
+    if (!homeComp || !awayComp) continue
+
+    const homeCode = (homeComp.team?.abbreviation ?? '').toUpperCase()
+    const awayCode = (awayComp.team?.abbreviation ?? '').toUpperCase()
+    const homeScore = parseInt(homeComp.score ?? '', 10)
+    const awayScore = parseInt(awayComp.score ?? '', 10)
+
+    if (!homeCode || !awayCode || isNaN(homeScore) || isNaN(awayScore)) continue
+
+    if (!results[groupName]) results[groupName] = []
+    results[groupName].push({ home: homeCode, away: awayCode, homeScore, awayScore })
+  }
+
+  return results
 }
 
 export async function getUpcomingMatches(tournament = 'world_cup_2026'): Promise<ESPNEvent[]> {

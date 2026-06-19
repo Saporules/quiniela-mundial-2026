@@ -9,7 +9,7 @@ import {
 } from '../../lib/db.js'
 import { getParticipantByToken } from '../../lib/db.js'
 import { getTeam, TIER_CONFIG, TEAMS } from '../../lib/teams.js'
-import { getMatchSchedule, getGroupStandings, getGroupFixtures } from '../../lib/espn.js'
+import { getMatchSchedule, getGroupStandings, getGroupFixtures, getGroupResults } from '../../lib/espn.js'
 import { getLeftoverTeams } from '../../lib/assignment.js'
 import { resolveStatus, formatConditions } from '../../lib/qualification.js'
 import type { GroupQualificationMap } from '../../lib/qualification.js'
@@ -40,10 +40,11 @@ const claims       = await getClaims(q.id)
 const leftover     = q.status !== 'setup' ? await getLeftoverTeams(q.id) : []
 
 // Live matches from ESPN
-const [{ today: matchesToday, week: matchesWeek, previewMode }, groupStandings, groupFixtures] = await Promise.all([
+const [{ today: matchesToday, week: matchesWeek, previewMode }, groupStandings, groupFixtures, groupResults] = await Promise.all([
   getMatchSchedule(q.tournament),
   getGroupStandings(q.tournament),
   getGroupFixtures(q.tournament),
+  getGroupResults(q.tournament),
 ])
 
 // Build qualification status map
@@ -52,7 +53,7 @@ if (Object.keys(groupStandings).length > 0) {
   for (const [groupName, groupStandingsList] of Object.entries(groupStandings)) {
     const fixtures = groupFixtures[groupName] ?? []
     for (const standing of groupStandingsList) {
-      const status = resolveStatus(standing.teamCode, groupName, groupStandingsList, groupStandings, fixtures)
+      const status = resolveStatus(standing.teamCode, groupName, groupStandingsList, groupStandings, fixtures, groupResults)
       const conditions = (status === 'contending' || status === 'third') && standing.played >= 2
         ? formatConditions(standing.teamCode, groupStandingsList, fixtures)
         : []
@@ -74,6 +75,16 @@ function assignmentsList() {
     share_percentage: a.share_percentage,
   }))
 }
+
+function getTeamGroupPoints(teamCode: string): number | null {
+  for (const standings of Object.values(groupStandings)) {
+    const entry = standings.find(s => s.teamCode === teamCode)
+    if (entry) return entry.points
+  }
+  return null
+}
+
+const hasGroupData = Object.keys(groupStandings).length > 0
 ---
 
 <Layout title={q.name}>
@@ -228,17 +239,26 @@ function assignmentsList() {
               const fav = pTeams.filter(a => a.team?.tier === 'favorito')
               const cre = pTeams.filter(a => a.team?.tier === 'creyente')
               const mal = pTeams.filter(a => a.team?.tier === 'maleta')
+              const totalPoints = hasGroupData
+                ? pTeams.reduce((sum, a) => sum + (getTeamGroupPoints(a.team_code) ?? 0), 0)
+                : null
 
               return (
                 <div class="card p-5">
                   <div class="flex items-center gap-3 mb-4">
-                    <div class="w-10 h-10 rounded-full bg-wc-blue flex items-center justify-center font-display text-xl text-wc-gold">
+                    <div class="w-10 h-10 rounded-full bg-wc-blue flex items-center justify-center font-display text-xl text-wc-gold shrink-0">
                       {p.name[0]!.toUpperCase()}
                     </div>
-                    <div>
+                    <div class="flex-1 min-w-0">
                       <h3 class="font-semibold">{p.name}</h3>
                       <p class="text-xs text-wc-muted">{pTeams.length} equipos</p>
                     </div>
+                    {totalPoints !== null && (
+                      <div class="text-right shrink-0">
+                        <span class="text-2xl font-bold text-wc-gold tabular-nums leading-none">{totalPoints}</span>
+                        <p class="text-[10px] text-wc-muted leading-tight mt-0.5">pts grupos</p>
+                      </div>
+                    )}
                   </div>
 
                   {fav.length > 0 && (
@@ -249,6 +269,9 @@ function assignmentsList() {
                           <span class="team-badge text-xs">
                             {a.team!.flag} {a.team!.name}
                             {a.share_percentage < 100 && <span class="text-wc-gold"> {a.share_percentage.toFixed(0)}%</span>}
+                            {getTeamGroupPoints(a.team_code) !== null && (
+                              <span class="ml-1 font-bold tabular-nums text-[11px]">{getTeamGroupPoints(a.team_code)}<span class="font-normal text-wc-muted">pts</span></span>
+                            )}
                           </span>
                         ))}
                       </div>
@@ -262,6 +285,9 @@ function assignmentsList() {
                           <span class="team-badge text-xs">
                             {a.team!.flag} {a.team!.name}
                             {a.share_percentage < 100 && <span class="text-wc-gold"> {a.share_percentage.toFixed(0)}%</span>}
+                            {getTeamGroupPoints(a.team_code) !== null && (
+                              <span class="ml-1 font-bold tabular-nums text-[11px]">{getTeamGroupPoints(a.team_code)}<span class="font-normal text-wc-muted">pts</span></span>
+                            )}
                           </span>
                         ))}
                       </div>
@@ -275,6 +301,9 @@ function assignmentsList() {
                           <span class="team-badge text-xs opacity-70">
                             {a.team!.flag} {a.team!.name}
                             {a.share_percentage < 100 && <span class="text-wc-gold"> {a.share_percentage.toFixed(0)}%</span>}
+                            {getTeamGroupPoints(a.team_code) !== null && (
+                              <span class="ml-1 font-bold tabular-nums text-[11px]">{getTeamGroupPoints(a.team_code)}<span class="font-normal text-wc-muted">pts</span></span>
+                            )}
                           </span>
                         ))}
                       </div>

@@ -8,7 +8,7 @@ import {
   resolveStatus,
   formatConditions,
 } from '../qualification.js'
-import type { GroupStanding, GroupStandingsMap } from '../espn.js'
+import type { GroupStanding, GroupStandingsMap, CompletedMatch } from '../espn.js'
 import type { RemainingMatch } from '../qualification.js'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -28,6 +28,10 @@ function s(
 
 function m(home: string, away: string): RemainingMatch {
   return { home, away }
+}
+
+function cr(home: string, away: string, homeScore: number, awayScore: number): CompletedMatch {
+  return { home, away, homeScore, awayScore }
 }
 
 // ─── sortByFifa ───────────────────────────────────────────────────────────────
@@ -69,6 +73,54 @@ describe('sortByFifa', () => {
     const original = [...standings]
     sortByFifa(standings)
     expect(standings[0].teamCode).toBe(original[0].teamCode)
+  })
+})
+
+// ─── sortByFifa with H2H ──────────────────────────────────────────────────────
+
+describe('sortByFifa with H2H', () => {
+  it('should rank H2H winner above H2H loser when tied on all overall stats', () => {
+    // ENG and FRA identical on every overall metric — ENG beat FRA 1-0 in H2H
+    const standings = [
+      s('ENG', 2, 4, +1, 2, 1, 1, 0),
+      s('FRA', 2, 4, +1, 2, 1, 1, 0),
+      s('GER', 2, 3,  0, 1, 1, 0, 1),
+      s('POL', 2, 0, -2, 0, 0, 0, 2),
+    ]
+    const results = [cr('ENG', 'FRA', 1, 0)]
+    const sorted = sortByFifa(standings, results)
+    expect(sorted[0].teamCode).toBe('ENG')
+    expect(sorted[1].teamCode).toBe('FRA')
+  })
+
+  it('should fall through to overall GD when H2H was a draw', () => {
+    // ENG and FRA tied on H2H (0-0 draw) → overall GD decides: ENG(+2) > FRA(+1)
+    const standings = [
+      s('ENG', 2, 4, +2, 3, 1, 1, 0),
+      s('FRA', 2, 4, +1, 2, 1, 1, 0),
+      s('GER', 2, 1, -1, 1, 0, 1, 1),
+      s('POL', 2, 0, -2, 0, 0, 0, 2),
+    ]
+    const results = [cr('ENG', 'FRA', 0, 0)]
+    const sorted = sortByFifa(standings, results)
+    expect(sorted[0].teamCode).toBe('ENG')
+    expect(sorted[1].teamCode).toBe('FRA')
+  })
+
+  it('should only use H2H matches between the tied teams, ignoring others', () => {
+    // GER and FRA tied at 4pts; ENG has 6pts (different bucket) → ENG vs FRA H2H irrelevant
+    const standings = [
+      s('ENG', 2, 6, +4, 5, 2, 0, 0),
+      s('GER', 2, 4, +1, 2, 1, 1, 0),
+      s('FRA', 2, 4, +1, 2, 1, 1, 0),
+      s('POL', 2, 0, -6, 0, 0, 0, 2),
+    ]
+    // GER beat FRA in H2H; ENG beat FRA too but that's a different points bucket
+    const results = [cr('GER', 'FRA', 1, 0), cr('ENG', 'FRA', 2, 0)]
+    const sorted = sortByFifa(standings, results)
+    expect(sorted[0].teamCode).toBe('ENG')
+    expect(sorted[1].teamCode).toBe('GER')  // H2H winner among the 4pts group
+    expect(sorted[2].teamCode).toBe('FRA')
   })
 })
 
@@ -153,6 +205,61 @@ describe('computeTop2', () => {
   it('should handle multiple remaining fixtures (>2 matches) without crashing', () => {
     const result = computeTop2('NED', groupC_early, fixturesC)
     expect(['qualified', 'contending', 'eliminated_top2']).toContain(result)
+  })
+
+  /*
+   * ── Boundary GD tests (new) ────────────────────────────────────────────────
+   *
+   * computeTop2 uses GD=±1 for standard scenarios. A "qualified" result must
+   * survive the pessimistic boundary check (team loses by BOUNDARY_GD=9, others
+   * win by 9). An "eliminated_top2" result must survive the optimistic boundary
+   * check (team wins by 9, others lose by 9). Cases that fail the boundary are
+   * downgraded to "contending".
+   */
+
+  it('should downgrade qualified to contending when a large loss would drop team below top-2', () => {
+    /*
+     * TEAM leads group on GD (4pts, GD+5) but its advantage is fragile.
+     * Standard GD=1 — all 9 scenarios: TEAM stays in top-2.
+     *   - TEAM wins: TEAM=7pts → always ahead
+     *   - TEAM draws: TEAM=5pts, GD+5 > T1 and T2 on every T1-T2 result
+     *   - TEAM loses: TEAM=4pts, GD+4 — still beats T2(3pts) and T3(1pt)
+     *     while T1 wins → T1=7, TEAM=4(+4) → 2nd ✓
+     *     T1 draws → T1=5, TEAM=4(+4) → 2nd ✓
+     *     T2 wins → T2=6, TEAM=4(+4) → 2nd ✓
+     *
+     * Pessimistic (TEAM loses by 9, T1 home wins by 9):
+     *   TEAM=4pts, GD+5-9=-4; T3=4pts(won), GD-8+9=+1; T1=7pts(+2+9=+11)
+     *   → sorted: T1=7(+11), T3=4(+1), TEAM=4(-4), T2=3 → TEAM 3rd → contending
+     */
+    const precariousGroup = [
+      s('T1',   2, 4, +2,  3),
+      s('TEAM', 2, 4, +5,  5),
+      s('T2',   2, 3, +1,  2),
+      s('T3',   2, 1, -8,  0),
+    ]
+    const precariousFixtures = [m('TEAM', 'T3'), m('T1', 'T2')]
+    expect(computeTop2('TEAM', precariousGroup, precariousFixtures)).toBe('contending')
+  })
+
+  it('should downgrade eliminated_top2 to contending when a large win would reach top-2', () => {
+    /*
+     * T1 and T2 both at 6pts, TEAM at 3pts. Standard GD=1 — no scenario gives TEAM top-2:
+     *   TEAM wins: 6pts, GD+1 → T1/T2 still ≥6pts with better GD → TEAM 3rd
+     *   TEAM draws/loses: TEAM ≤4pts, can't catch T1/T2
+     *
+     * Optimistic (TEAM wins by 9, T1 home loses to T2 by 9):
+     *   TEAM=6pts(+9); T2=9pts(+4+9=+13); T1=6pts(+5-9=-4)
+     *   → sorted: T2=9, TEAM=6(+9), T1=6(-4), T3=0 → TEAM 2nd → contending
+     */
+    const blockedGroup = [
+      s('T1',   2, 6, +5, 6),
+      s('T2',   2, 6, +4, 5),
+      s('TEAM', 2, 3,  0, 1),
+      s('T3',   2, 0, -9, 0),
+    ]
+    const blockedFixtures = [m('TEAM', 'T3'), m('T1', 'T2')]
+    expect(computeTop2('TEAM', blockedGroup, blockedFixtures)).toBe('contending')
   })
 })
 
@@ -289,7 +396,7 @@ describe('isThirdEliminated', () => {
       group,
     )
     // MEX has played 2 games — must return false regardless of other groups
-    expect(isThirdEliminated('MEX', group, allGroups)).toBe(false)
+    expect(isThirdEliminated('MEX', 'EVAL', group, allGroups)).toBe(false)
   })
 
   it('should return true when team finished 4th in a completed group', () => {
@@ -301,7 +408,7 @@ describe('isThirdEliminated', () => {
     ]
     const allGroups: GroupStandingsMap = { EVAL: group }
     // BEL is 4th in a completed group → eliminated from being best 3rd
-    expect(isThirdEliminated('BEL', group, allGroups)).toBe(true)
+    expect(isThirdEliminated('BEL', 'EVAL', group, allGroups)).toBe(true)
   })
 
   it('should return true when 8+ locked thirds have better stats than evaluated team', () => {
@@ -318,7 +425,7 @@ describe('isThirdEliminated', () => {
       code: 'LT' + i, pts: 5, gd: 1, gf: 2,
     }))
     const allGroups = buildAllGroups(eightBetterLocked, evaluatedTeam, evalGroup)
-    expect(isThirdEliminated('CZE', evalGroup, allGroups)).toBe(true)
+    expect(isThirdEliminated('CZE', 'EVAL', evalGroup, allGroups)).toBe(true)
   })
 
   it('should return false when only 7 locked thirds rank above evaluated team', () => {
@@ -334,7 +441,7 @@ describe('isThirdEliminated', () => {
       code: 'LT' + i, pts: 5, gd: 1, gf: 2,
     }))
     const allGroups = buildAllGroups(sevenBetterLocked, evaluatedTeam, evalGroup)
-    expect(isThirdEliminated('CZE', evalGroup, allGroups)).toBe(false)
+    expect(isThirdEliminated('CZE', 'EVAL', evalGroup, allGroups)).toBe(false)
   })
 
   it('should NOT count groups that are not fully finished as locked thirds', () => {
@@ -358,7 +465,38 @@ describe('isThirdEliminated', () => {
       s('L_X', 2, 0, -7, 0),
     ]
     // Still only 7 locked thirds → should be false
-    expect(isThirdEliminated('CZE', evalGroup, allGroups)).toBe(false)
+    expect(isThirdEliminated('CZE', 'EVAL', evalGroup, allGroups)).toBe(false)
+  })
+
+  it('should skip own group using groupKey and identify third via sortByFifa, not raw index', () => {
+    /*
+     * Group 'A': ESPN delivers teams in arbitrary order — NED (1st by sortByFifa)
+     * appears at raw index 2. The evaluated team is ESP (3rd by sortByFifa).
+     *
+     * Buggy code: 'A' !== evalGroupA[0].teamCode[0]='E' → doesn't skip group 'A'
+     *             reads raw[2]=NED(9pts) as "the third"
+     *             NED.pts(9) > ESP.pts(6) → spurious +1 count → 7+1=8 → wrong: eliminated
+     *
+     * Correct code: gName='A' === groupKey='A' → skips own group
+     *               only 7 real locked thirds → NOT eliminated
+     */
+    const evalGroupA: GroupStanding[] = [
+      s('ESP', 3, 6, +2, 3),   // ESPN raw[0] — sortByFifa[2] (3rd)
+      s('GER', 3, 6, +3, 4),   // ESPN raw[1] — sortByFifa[1] (2nd)
+      s('NED', 3, 9, +5, 6),   // ESPN raw[2] — sortByFifa[0] (1st!)
+      s('HAI', 3, 0, -8, 0),
+    ]
+    const groups: GroupStandingsMap = { 'A': evalGroupA }
+    for (let i = 0; i < 7; i++) {
+      groups[`G${i}`] = [
+        s(`W${i}`,  3, 9, 5, 6),
+        s(`R${i}`,  3, 6, 2, 4),
+        s(`LT${i}`, 3, 7, 2, 4),  // locked 3rd — 7pts > ESP 6pts → ranks above ESP
+        s(`L${i}`,  3, 0, -7, 0),
+      ]
+    }
+    // 7 thirds ranked above ESP → NOT eliminated (needs ≥8)
+    expect(isThirdEliminated('ESP', 'A', evalGroupA, groups)).toBe(false)
   })
 })
 
@@ -374,14 +512,14 @@ describe('resolveStatus', () => {
 
   it('should return qualified for a team guaranteed top-2 in all scenarios', () => {
     const allGroups: GroupStandingsMap = { A: completedGroupTop2 }
-    const result = resolveStatus('FRA', completedGroupTop2, allGroups, [])
+    const result = resolveStatus('FRA', 'A', completedGroupTop2, allGroups, [])
     expect(result).toBe('qualified')
   })
 
   it('should return eliminated for a 4th-place team in a completed group', () => {
     const allGroups: GroupStandingsMap = { A: completedGroupTop2 }
     // BEL is 4th in completed group → eliminated_top2 + eliminated_third → eliminated
-    const result = resolveStatus('BEL', completedGroupTop2, allGroups, [])
+    const result = resolveStatus('BEL', 'A', completedGroupTop2, allGroups, [])
     expect(result).toBe('eliminated')
   })
 
@@ -396,14 +534,14 @@ describe('resolveStatus', () => {
     const allGroups: GroupStandingsMap = { A: group }
     const fixtures = [m('ARG', 'MEX'), m('BRA', 'ESP')]
     // ESP is currently 3rd but can reach top-2 → must be contending, not third
-    const result = resolveStatus('ESP', group, allGroups, fixtures)
+    const result = resolveStatus('ESP', 'A', group, allGroups, fixtures)
     expect(result).toBe('contending')
   })
 
   it('should return third when team is eliminated from top-2 but in best-8 thirds snapshot', () => {
     // POR finished 3rd in completed group; assume POR is in best-8 thirds
     const allGroups: GroupStandingsMap = { A: completedGroupTop2 }
-    const result = resolveStatus('POR', completedGroupTop2, allGroups, [])
+    const result = resolveStatus('POR', 'A', completedGroupTop2, allGroups, [])
     // POR is 3rd with 3pts — whether it's 'third' or 'eliminated' depends on other groups
     // In this minimal map (only 1 group), POR is definitely in the best thirds → 'third'
     expect(result).toBe('third')
@@ -412,8 +550,8 @@ describe('resolveStatus', () => {
   it('should respect priority: qualified > contending > third > eliminated', () => {
     // Smoke test: verify no status lower in priority overrides a higher one
     const allGroups: GroupStandingsMap = { A: completedGroupTop2 }
-    const q = resolveStatus('FRA', completedGroupTop2, allGroups, [])
-    const e = resolveStatus('BEL', completedGroupTop2, allGroups, [])
+    const q = resolveStatus('FRA', 'A', completedGroupTop2, allGroups, [])
+    const e = resolveStatus('BEL', 'A', completedGroupTop2, allGroups, [])
     const statusPriority = ['qualified', 'contending', 'third', 'eliminated', 'none']
     expect(statusPriority.indexOf(q)).toBeLessThan(statusPriority.indexOf(e))
   })
