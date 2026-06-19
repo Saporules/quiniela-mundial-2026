@@ -158,8 +158,14 @@ export function computeTop2(
   pastResults?: CompletedMatch[],
 ): 'qualified' | 'contending' | 'eliminated_top2' {
   if (fixtures.length === 0) {
-    const pos = sortByFifa(standings, pastResults).findIndex(s => s.teamCode === teamCode)
-    return pos <= 1 ? 'qualified' : 'eliminated_top2'
+    if (standings.every(s => s.played >= 3)) {
+      // Group fully finished — use final standings
+      const pos = sortByFifa(standings, pastResults).findIndex(s => s.teamCode === teamCode)
+      return pos <= 1 ? 'qualified' : 'eliminated_top2'
+    }
+    // Group in progress but ESPN returned no upcoming fixtures (games are on future dates).
+    // Derive outcome from max-possible-points analysis.
+    return estimateWithoutFixtures(teamCode, standings)
   }
 
   const scenarios = generateScenarios(fixtures.length)
@@ -187,6 +193,30 @@ export function computeTop2(
     if (posO <= 1) return 'contending'
     return 'eliminated_top2'
   }
+
+  return 'contending'
+}
+
+// When ESPN returns no upcoming fixtures (future games not yet in today's feed),
+// derive qualification outcome from max-possible-points analysis:
+//   · qualified    → fewer than 2 teams can ever reach our current points
+//   · eliminated   → 2+ teams already have more points than our best possible total
+//   · contending   → everything else
+function estimateWithoutFixtures(
+  teamCode: string,
+  standings: GroupStanding[],
+): 'qualified' | 'contending' | 'eliminated_top2' {
+  const team = standings.find(s => s.teamCode === teamCode)
+  if (!team) return 'eliminated_top2'
+
+  const others = standings.filter(s => s.teamCode !== teamCode)
+  const myMaxPts = team.points + 3 * (3 - team.played)
+
+  // 2+ teams already exceed our theoretical maximum → out
+  if (others.filter(o => o.points > myMaxPts).length >= 2) return 'eliminated_top2'
+
+  // Fewer than 2 teams can even reach our current (minimum) points → guaranteed top-2
+  if (others.filter(o => o.points + 3 * (3 - o.played) >= team.points).length < 2) return 'qualified'
 
   return 'contending'
 }
