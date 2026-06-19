@@ -1,100 +1,140 @@
 # Quiniela Mundial 2026 — Estado del Proyecto
 
 ## Stack
-- **Framework**: Astro 5.18.2, SSR, adaptador `@astrojs/node` (standalone)
-- **Base de datos**: MySQL vía `mysql2/promise` (puro JS, sin binarios nativos)
-- **CSS**: Tailwind CSS 3 + CSS custom properties para overrides
+- **Framework**: Astro 5 SSR, adaptador `@astrojs/node` (standalone)
+- **Base de datos**: SQLite vía `@libsql/client` (puro JS, sin binarios nativos)
+- **CSS**: Tailwind CSS 3 + CSS custom properties
 - **Íconos**: Phosphor Icons CDN (`@phosphor-icons/web@2.1.1`)
 - **Auth**: bcryptjs + cookies HttpOnly
-- **Build**: `astro build` → `dist/server/entry.mjs`
+- **Build**: `astro build` → `node dist/server/entry.mjs`
 
-## Despliegue (cPanel)
-- **Servidor**: cPanel Node.js App
-- **Ruta del app**: `/public_html/asaflopez/quiniela/`
-- **Startup file**: `dist/server/entry.mjs`
-- **Puerto**: 2083 (seteado en cPanel env vars)
-- **Base de datos**: MySQL en localhost
-  - `DB_HOST=localhost`
-  - `DB_USER=qgpwshwt_fulbito`
-  - `DB_PASS=Y2{p7&kpsH}{`
-  - `DB_NAME=qgpwshwt_quiniela`
-  - `SESSION_SECRET=quiniela-mundial-2026-secret-change-this`
+## Repositorio
+- GitHub: https://github.com/Saporules/quiniela-mundial-2026
+- Rama principal: `main`
+- Rama de desarrollo: `develop`
+- Flujo: feature en `develop` → PR → merge a `main` → Railway autodespliega
+
+## Despliegue (Railway)
+- **URL**: quiniela-mundial-2026-production-dccb.up.railway.app
+- **Build**: nixpacks detecta Node.js automáticamente
+- **Start**: `node dist/server/entry.mjs`
+- **Variables de entorno requeridas**:
   - `HOST=0.0.0.0`
-  - `PORT=2083`
+  - `SESSION_SECRET=quiniela-mundial-2026-secret-cambia-esto`
+  - `TURSO_URL=` (pendiente — ver sección Turso)
+  - `TURSO_TOKEN=` (pendiente — ver sección Turso)
 
-### Procedimiento de deploy
-1. Hacer `npm run build` en local
-2. Crear zip: `dist/`, `public/`, `package.json`, `package-lock.json`, `.env`
-3. En cPanel File Manager: borrar `dist/` viejo, subir y extraer nuevo zip
-4. **Run NPM Install** (instala `piccolore` y demás deps)
-5. **Restart** la app
-6. Primera vez: ir a `/admin/setup` para crear cuenta admin
+## Base de datos — Turso (pendiente configurar)
+Actualmente `@libsql/client` usa archivo local `quiniela.db` que se pierde en cada redeploy.
+La solución es conectar a **Turso** (SQLite cloud, free tier):
+1. Registrarse en turso.tech
+2. Crear una DB: `turso db create quiniela-mundial-2026`
+3. Obtener URL: `turso db show quiniela-mundial-2026 --url`
+4. Crear token: `turso db tokens create quiniela-mundial-2026`
+5. Agregar en Railway: `TURSO_URL` y `TURSO_TOKEN`
+6. Actualizar `src/lib/db.ts` para leer esas variables
 
-### Credenciales admin locales
+Cambio pendiente en db.ts (3 líneas):
+```ts
+const client = createClient({
+  url: process.env['TURSO_URL'] ?? `file:${process.env['DB_PATH'] ?? 'quiniela.db'}`,
+  authToken: process.env['TURSO_TOKEN'],
+})
+```
+
+## Credenciales admin locales
 - Usuario: `admin` / Contraseña: `mundial2026`
 
-## Zip más reciente
-- `~/Desktop/quiniela-mundial-2026.zip` (770K, 2026-06-11) — incluye fix de `piccolore`
-- El zip viejo en el proyecto (`quiniela-deploy.zip`, 666K, 2026-05-29) está desactualizado
+## Participantes de la quiniela
+| Nombre | Email |
+|---|---|
+| Rudy | elrudyman96@gmail.com |
+| Charmin | jorge.ptrt@gmail.com |
+| Dannister | dnevarezgarcia@gmail.com |
+| Tito | ernestoshdz@gmail.com |
+| Asaf | asaf.eduardo@gmail.com |
+
+## Seed script
+`seed.mjs` en la raíz del proyecto recrea toda la quiniela desde cero:
+- Admin account
+- Quiniela "Quiniela 2026" (slug: `quiniela2026`, modo: `full_random`)
+- 5 participantes con tokens de acceso
+- 48 asignaciones de equipos (extraídas de fotos del sistema anterior)
+
+Ejecutar: `node seed.mjs` (local) o desde Railway shell con `DB_PATH=/data/quiniela.db node seed.mjs`
+
+## Asignaciones de equipos (por grupo)
+```
+A: MEX→Rudy,  RSA→Tito,      KOR→Tito,      CZE→Tito
+B: CAN→Rudy,  BIH→Rudy,      QAT→Charmin,   SUI→Dannister
+C: BRA→Asaf,  MAR→Asaf,      HAI→Tito,      SCO→Dannister
+D: USA→Dann,  PAR→Dann,      AUS→Charmin,   TUR→Rudy
+E: GER→Dann,  CUR→Dann,      CIV→Tito,      ECU→Asaf
+F: NED→Tito,  JPN→Tito,      SWE→Charmin,   TUN→Asaf
+G: BEL→Asaf,  EGY→Dann,      IRN→Tito,      NZL→Rudy
+H: ESP→Tito,  CPV→Charmin,   KSA→Charmin,   URU→Asaf
+I: FRA→Charm, SEN→Rudy,      IRQ→Dann,      NOR→Charmin
+J: ARG→Dann,  ALG→Charmin,   AUT→Dann,      JOR→Tito
+K: POR→Charm, COD→Asaf,      UZB→Asaf,      COL→Rudy
+L: ENG→Rudy,  CRO→Asaf,      GHA→Rudy,      PAN→Rudy
+```
 
 ## Estructura de archivos clave
 ```
 src/
   lib/
     teams.ts        — 48 equipos oficiales WC2026, grupos A-L
-    db.ts           — Pool MySQL async, schema auto-init, todas las queries
+    db.ts           — Cliente @libsql/client, schema auto-init, todas las queries
     auth.ts         — Sesiones, cookies, bcrypt
     assignment.ts   — Lógica de asignación de equipos
-    espn.ts         — Fetch de partidos desde ESPN API
+    espn.ts         — Fetch de partidos y standings desde ESPN API
   pages/
-    index.astro                     — Homepage: hero con fondo + bracket
-    quiniela/[slug].astro           — Vista del participante: equipos, reclamos
+    index.astro                     — Homepage: hero + bracket
+    quiniela/[slug].astro           — Vista del participante
     admin/
-      setup.astro                   — Primera vez: crear cuenta admin
-      index.astro                   — Login admin
-      dashboard.astro               — Lista de quinielas
-      quiniela/[id].astro           — Panel admin de una quiniela
+      setup.astro, index.astro, dashboard.astro
+      quiniela/[id].astro
     api/
       auth/login.ts, logout.ts
       admin/setup.ts
-      admin/quiniela/
-        create.ts, delete.ts, reset.ts, copy.ts
-        assign.ts, participant.ts, resolve-claims.ts
+      admin/quiniela/ (create, delete, reset, copy, assign, participant, resolve-claims)
   components/
-    Bracket.astro     — Visualización de llaves tipo bracket (R32→SF→Final→SF→R32)
-    GroupStage.astro  — Vista de fase de grupos
-    MatchCard.astro   — Tarjeta de partido
-    TeamCard.astro    — Tarjeta de equipo
-    TeamsTab.astro    — Tab de equipos con reclamos
+    Bracket.astro, GroupStage.astro, MatchCard.astro, TeamCard.astro, TeamsTab.astro
 public/
-  copa-del-mundo.png      — PNG de la copa (centro del bracket)
-  fondo-mundial-2026.webp — Foto de fondo del hero
+  copa-del-mundo.png, fondo-mundial-2026.webp, favicon.svg
+seed.mjs            — Script de seed para restaurar datos
+railway.json        — Config de build/deploy para Railway
 ```
 
-## Equipos oficiales WC2026 (grupos)
-```
-A: MEX, RSA, KOR, CZE      G: BEL, EGY, IRN, NZL
-B: CAN, BIH, QAT, SUI      H: ESP, CPV, KSA, URU
-C: BRA, MAR, HAI, SCO      I: FRA, SEN, IRQ, NOR
-D: USA, PAR, AUS, TUR      J: ARG, ALG, AUT, JOR
-E: GER, CUR, CIV, ECU      K: POR, COD, UZB, COL
-F: NED, JPN, SWE, TUN      L: ENG, CRO, GHA, PAN
-```
-Categorías: 8 favoritos / 16 creyentes / 24 maletas
+## Features implementados
+- [x] Hero con imagen de fondo
+- [x] Bracket visual tipo eliminatoria (drag-to-scroll, vista lista/llaves)
+- [x] Fase de grupos con standings en vivo desde ESPN API (caché 30 min)
+- [x] Vista de participante con equipos asignados
+- [x] Sistema de reclamos con precio dinámico y tooltip
+- [x] Botón compartir (WhatsApp en móvil, copiar link en desktop)
+- [x] Admin: crear/editar/eliminar quinielas, gestionar participantes
+- [x] Asignación aleatoria de equipos
 
-## Modo de funcionamiento
-La quiniela tiene dos modos: `reclamo` (participantes eligen equipos con costo dinámico) y `random` (asignación aleatoria). El precio de un equipo reclamado se divide entre todos los que lo reclaman.
+## [CURRENT BUFFER]
+
+_Buffer vacío — pendiente próximo hito._
+
+---
+
+## [HISTORICAL LOG]
+
+- 2026-06-17 | Correcciones auditoría — qualification tooltip | Éxito | 41/41 tests, 7 pasos completados, 4 commits, 0 críticos
+
+---
 
 ## Historial de errores resueltos
 | Error | Causa | Fix |
 |---|---|---|
-| `GLIBC_2.29 not found` | better-sqlite3 binario nativo | Migrar a MySQL (mysql2 es JS puro) |
-| `Access denied for user` | Credenciales MySQL incorrectas | Setear correctas en cPanel env vars |
-| `Cannot find module 'dist/server/entry.mjs'` | Startup file mal configurado | Cambiar a `dist/server/entry.mjs` |
-| `Cannot find package 'piccolore'` | Dep transitiva de @astrojs/node no listada | Agregar `"piccolore": "^0.1.3"` a package.json |
-| CSS left overflow con justify-center | Browser solo muestra overflow derecho | `width: max-content; margin: 0 auto` |
-| Íconos solapan texto en inputs | padding shorthand override | CSS custom property `--input-pl` |
-| Bracket derecho espejado incorrecto | flex-row-reverse invertía columnas Y posición score/nombre | Reordenar columnas en HTML + flip score/nombre en tarjetas derechas |
-
-## Estado actual
-El código local está **completo y funcional**. El zip con todos los fixes (`~/Desktop/quiniela-mundial-2026.zip`) está listo para subir al servidor. Está pendiente que el usuario lo desplegue en cPanel.
+| `GLIBC_2.29` en cPanel | better-sqlite3 binario nativo | Migrar a mysql2, luego a @libsql/client |
+| `piccolore not found` | Dep transitiva de @astrojs/node | Agregar explícitamente a package.json |
+| `clsx not found` | Dep transitiva de astro | Agregar todas las deps runtime |
+| `better-sqlite3` falla en Railway Node 24 | Sin prebuilts ni Python | Migrar a @libsql/client |
+| `HOST=localhost` en Railway | Astro no bindea a 0.0.0.0 | Setear `HOST=0.0.0.0` en Railway vars |
+| DB se borra en redeploy | Filesystem efímero en Railway | Pendiente: migrar a Turso |
+| nixpacks ignora .node-version | Cache de build | Usar NIXPACKS_NODE_VERSION en toml |

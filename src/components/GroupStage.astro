@@ -1,89 +1,162 @@
 ---
 import { WC2026_GROUPS, getTeam } from '../lib/teams.js'
+import type { GroupStandingsMap, GroupStanding } from '../lib/espn.js'
+import type { GroupQualificationMap } from '../lib/qualification.js'
 
 interface Props {
   assignments: Array<{ team_code: string; participant_name: string; share_percentage: number }>
+  standings?: GroupStandingsMap
+  qualificationMap?: GroupQualificationMap
 }
 
-const { assignments } = Astro.props
+const { assignments, standings = {}, qualificationMap = {} } = Astro.props
 
 function getOwners(teamCode: string) {
   return assignments.filter(a => a.team_code === teamCode)
 }
 
+function getStat(groupName: string, teamCode: string): GroupStanding | null {
+  const group = standings[groupName] ?? standings[groupName.toUpperCase()] ?? null
+  return group?.find(s => s.teamCode === teamCode || s.teamCode === teamCode.toUpperCase()) ?? null
+}
+
+// If we have live standings, reorder teams within each group by position
+function getOrderedTeams(groupName: string, teamCodes: string[]): string[] {
+  const liveGroup = standings[groupName] ?? standings[groupName.toUpperCase()]
+  if (!liveGroup || liveGroup.length === 0) return teamCodes
+  const ordered = liveGroup.map(s => teamCodes.find(c => c === s.teamCode || c.toUpperCase() === s.teamCode)).filter(Boolean) as string[]
+  const rest = teamCodes.filter(c => !ordered.includes(c))
+  return [...ordered, ...rest]
+}
+
 const groups = Object.entries(WC2026_GROUPS)
+const hasLiveData = Object.keys(standings).length > 0
 ---
 
 <section>
   <h2 class="font-display text-3xl text-wc-gold mb-6 tracking-wide">FASE DE GRUPOS</h2>
 
-  <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
-    {groups.map(([groupName, teamCodes]) => (
-      <div class="card p-4">
-        <div class="flex items-center gap-2 mb-3">
-          <div class="w-8 h-8 rounded-lg bg-wc-gold/20 border border-wc-gold/40 flex items-center justify-center">
-            <span class="font-display text-wc-gold text-lg">{groupName}</span>
-          </div>
-          <span class="font-semibold text-sm text-wc-muted">Grupo {groupName}</span>
-        </div>
+  {hasLiveData && (
+    <p class="text-xs text-wc-muted mb-4 flex items-center gap-1.5">
+      <i class="ph-fill ph-circle text-green-400 text-[8px]"></i>
+      Standings en vivo · ESPN
+    </p>
+  )}
 
-        <div class="overflow-x-auto -mx-1">
-          <table class="w-full text-xs">
-            <thead>
-              <tr class="text-wc-muted border-b border-wc-border">
-                <th class="text-left py-1.5 px-1 font-medium">Equipo</th>
-                <th class="px-1 font-medium">J</th>
-                <th class="px-1 font-medium">G</th>
-                <th class="px-1 font-medium">E</th>
-                <th class="px-1 font-medium">P</th>
-                <th class="px-1 font-medium">GD</th>
-                <th class="px-1 font-medium text-wc-gold">Pts</th>
-              </tr>
-            </thead>
-            <tbody class="divide-y divide-wc-border/40">
-              {teamCodes.map((code, pos) => {
-                const team = getTeam(code)
-                const owners = getOwners(code)
-                if (!team) return null
-                return (
-                  <tr class="hover:bg-wc-blue/10 transition-colors">
-                    <td class="py-2 px-1">
-                      <div class="flex items-center gap-1.5">
-                        {pos < 2 && (
-                          <div class="w-0.5 h-4 rounded-full bg-wc-gold/60 -ml-1 mr-0.5"></div>
-                        )}
-                        <span class="text-base">{team.flag}</span>
-                        <div>
-                          <span class="font-medium">{team.name}</span>
-                          {owners.length > 0 && (
-                            <div class="flex flex-wrap gap-1 mt-0.5">
-                              {owners.map(o => (
-                                <span class="text-[10px] px-1.5 py-0 rounded-full bg-blue-900/50 text-blue-300">
-                                  {o.share_percentage < 100 ? `${o.share_percentage.toFixed(0)}% ` : ''}{o.participant_name}
+  <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+    {groups.map(([groupName, rawCodes]) => {
+      const teamCodes = getOrderedTeams(groupName, rawCodes)
+      return (
+        <div class="card p-4">
+          <div class="flex items-center gap-2 mb-3">
+            <div class="w-8 h-8 rounded-lg bg-wc-gold/20 border border-wc-gold/40 flex items-center justify-center">
+              <span class="font-display text-wc-gold text-lg">{groupName}</span>
+            </div>
+            <span class="font-semibold text-sm text-wc-muted">Grupo {groupName}</span>
+          </div>
+
+          <div class="-mx-1">
+            <table class="w-full text-xs">
+              <thead>
+                <tr class="text-wc-muted border-b border-wc-border">
+                  <th class="text-left py-1.5 px-1 font-medium">Equipo</th>
+                  <th class="px-1 font-medium">J</th>
+                  <th class="px-1 font-medium">G</th>
+                  <th class="px-1 font-medium">E</th>
+                  <th class="px-1 font-medium">P</th>
+                  <th class="px-1 font-medium">GD</th>
+                  <th class="px-1 font-medium text-wc-gold">Pts</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-wc-border/40">
+                {teamCodes.map((code) => {
+                  const team = getTeam(code)
+                  const owners = getOwners(code)
+                  const stat = getStat(groupName, code)
+                  if (!team) return null
+
+                  const qual = qualificationMap[code]
+                  const status = qual?.status ?? 'none'
+                  const conditions = qual?.conditions ?? []
+
+                  const rowClass =
+                    status === 'qualified' ? 'bg-green-900/25 border-l-2 border-l-green-500/70' :
+                    status === 'eliminated' ? 'bg-red-900/20 border-l-2 border-l-red-500/60' :
+                    'hover:bg-wc-blue/10'
+
+                  return (
+                    <tr class:list={['transition-colors', rowClass]}>
+                      <td class="py-2 px-1">
+                        <div class="flex items-center gap-1.5">
+                          <span class="text-base">{team.flag}</span>
+                          <div class="flex-1 min-w-0">
+                            {conditions.length > 0 ? (
+                              <div class="relative inline-block group">
+                                <span class="font-medium cursor-help underline decoration-dotted decoration-wc-muted/50 underline-offset-2">
+                                  {team.name}
                                 </span>
-                              ))}
-                            </div>
+                                {status === 'third' && (
+                                  <span class="ml-1 text-[11px]" title="Actualmente uno de los 8 mejores terceros">🥉</span>
+                                )}
+                                <div class="pointer-events-none absolute left-0 top-full mt-1.5 z-50 hidden group-hover:block w-64 rounded-lg bg-wc-dark border border-wc-blue/40 p-3 shadow-2xl text-xs text-wc-muted">
+                                  <p class="font-semibold text-white mb-1.5 flex items-center gap-1">
+                                    <i class="ph ph-question text-wc-gold"></i>
+                                    ¿Qué necesita para clasificar?
+                                  </p>
+                                  <ul class="space-y-1">
+                                    {conditions.map(c => (
+                                      <li class="flex gap-1.5">
+                                        <span class="text-wc-gold mt-px">·</span>
+                                        <span>{c}</span>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              </div>
+                            ) : (
+                              <span class="font-medium">
+                                {team.name}
+                                {status === 'third' && (
+                                  <span class="ml-1 text-[11px]" title="Actualmente uno de los 8 mejores terceros">🥉</span>
+                                )}
+                              </span>
+                            )}
+                            {owners.length > 0 && (
+                              <div class="flex flex-wrap gap-1 mt-0.5">
+                                {owners.map(o => (
+                                  <span class="text-[10px] px-1.5 py-0 rounded-full bg-blue-900/50 text-blue-300">
+                                    {o.share_percentage < 100 ? `${o.share_percentage.toFixed(0)}% ` : ''}{o.participant_name}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                          {status === 'qualified' && (
+                            <span class="text-green-400 text-[10px] shrink-0" title="Clasificado">✓</span>
+                          )}
+                          {status === 'eliminated' && (
+                            <span class="text-red-400 text-[10px] shrink-0" title="Eliminado">✕</span>
                           )}
                         </div>
-                      </div>
-                    </td>
-                    <td class="text-center px-1 text-wc-muted">0</td>
-                    <td class="text-center px-1 text-wc-muted">0</td>
-                    <td class="text-center px-1 text-wc-muted">0</td>
-                    <td class="text-center px-1 text-wc-muted">0</td>
-                    <td class="text-center px-1 text-wc-muted">0</td>
-                    <td class="text-center px-1 font-bold text-white">0</td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
+                      </td>
+                      <td class="text-center px-1 text-wc-muted">{stat?.played ?? 0}</td>
+                      <td class="text-center px-1 text-wc-muted">{stat?.won ?? 0}</td>
+                      <td class="text-center px-1 text-wc-muted">{stat?.drawn ?? 0}</td>
+                      <td class="text-center px-1 text-wc-muted">{stat?.lost ?? 0}</td>
+                      <td class="text-center px-1 text-wc-muted">{stat?.gd != null ? (stat.gd > 0 ? `+${stat.gd}` : stat.gd) : 0}</td>
+                      <td class="text-center px-1 font-bold text-white">{stat?.points ?? 0}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
 
-        <p class="text-[10px] text-wc-muted mt-2 opacity-60 flex items-center gap-1">
-          <i class="ph ph-arrow-up"></i> Top 2 avanzan &middot; Mejor 3ro califica
-        </p>
-      </div>
-    ))}
+          <p class="text-[10px] text-wc-muted mt-2 opacity-60 flex items-center gap-1">
+            <i class="ph ph-arrow-up"></i> Top 2 avanzan &middot; Mejor 3ro califica
+          </p>
+        </div>
+      )
+    })}
   </div>
 </section>

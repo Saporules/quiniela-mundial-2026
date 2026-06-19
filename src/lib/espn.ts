@@ -98,6 +98,142 @@ export async function getStandings(tournament = 'world_cup_2026'): Promise<unkno
   return fetchWithCache<unknown>(url, cacheKey, 30)
 }
 
+export interface GroupStanding {
+  teamCode: string
+  played: number
+  won: number
+  drawn: number
+  lost: number
+  gd: number
+  gf: number
+  points: number
+}
+
+export type GroupStandingsMap = Record<string, GroupStanding[]>
+
+export interface CompletedMatch {
+  home: string
+  away: string
+  homeScore: number
+  awayScore: number
+}
+
+export async function getGroupStandings(tournament = 'world_cup_2026'): Promise<GroupStandingsMap> {
+  const raw = await getStandings(tournament) as any
+  if (!raw) return {}
+
+  const result: GroupStandingsMap = {}
+
+  // ESPN returns groups either under `children` (grouped) or flat `standings.entries`
+  const groups: Array<{ name: string; entries: any[] }> = []
+
+  if (Array.isArray(raw?.children)) {
+    for (const child of raw.children) {
+      const groupName = (child.abbreviation ?? child.shortName ?? child.name ?? '').replace(/^Group\s*/i, '')
+      const entries = child.standings?.entries ?? child.entries ?? []
+      if (entries.length) groups.push({ name: groupName, entries })
+    }
+  } else if (Array.isArray(raw?.standings?.entries)) {
+    // Flat list — group by entry.group.shortName
+    for (const entry of raw.standings.entries) {
+      const groupName = entry.group?.shortName ?? entry.group?.name?.replace(/^Group\s*/i, '') ?? '?'
+      let g = groups.find(g => g.name === groupName)
+      if (!g) { g = { name: groupName, entries: [] }; groups.push(g) }
+      g.entries.push(entry)
+    }
+  }
+
+  for (const { name, entries } of groups) {
+    const standings: GroupStanding[] = entries.map((entry: any) => {
+      const abbr = (entry.team?.abbreviation ?? '').toUpperCase()
+      const stat = (key: string) => {
+        const s = (entry.stats as Array<{ name: string; value: number }> | undefined)
+        return s?.find(x => x.name === key)?.value ?? 0
+      }
+      return {
+        teamCode: abbr,
+        played: stat('gamesPlayed') || stat('played'),
+        won:    stat('wins')  || stat('won'),
+        drawn:  stat('ties')  || stat('draws') || stat('drawn'),
+        lost:   stat('losses') || stat('lost'),
+        gd:     stat('pointDifferential') || stat('goalDifference') || stat('gd'),
+        gf:     stat('pointsFor') || stat('goalsFor') || stat('gf'),
+        points: stat('points'),
+      }
+    })
+    // Sort by points desc, then GD desc
+    standings.sort((a, b) => b.points - a.points || b.gd - a.gd)
+    result[name] = standings
+  }
+
+  return result
+}
+
+export async function getGroupFixtures(
+  tournament = 'world_cup_2026',
+): Promise<Record<string, Array<{ home: string; away: string }>>> {
+  const data = await getScoreboard(tournament)
+  const fixtures: Record<string, Array<{ home: string; away: string }>> = {}
+
+  if (!data?.events) return fixtures
+
+  for (const event of data.events) {
+    if (event.status.type.state !== 'pre') continue
+
+    const comp = event.competitions?.[0]
+    if (!comp?.groups || !comp.competitors || comp.competitors.length < 2) continue
+
+    const groupName =
+      (comp.groups?.shortName ?? comp.groups?.name ?? '').replace(/^Group\s*/i, '') || '?'
+
+    const [home, away] = comp.competitors
+    const homeCode = (home?.team?.abbreviation ?? '').toUpperCase()
+    const awayCode = (away?.team?.abbreviation ?? '').toUpperCase()
+
+    if (!homeCode || !awayCode) continue
+
+    if (!fixtures[groupName]) fixtures[groupName] = []
+    fixtures[groupName].push({ home: homeCode, away: awayCode })
+  }
+
+  return fixtures
+}
+
+export async function getGroupResults(
+  tournament = 'world_cup_2026',
+): Promise<Record<string, CompletedMatch[]>> {
+  const data = await getScoreboard(tournament)
+  const results: Record<string, CompletedMatch[]> = {}
+
+  if (!data?.events) return results
+
+  for (const event of data.events) {
+    if (!event.status.type.completed) continue
+
+    const comp = event.competitions?.[0]
+    if (!comp?.groups || !comp.competitors || comp.competitors.length < 2) continue
+
+    const groupName =
+      (comp.groups?.shortName ?? comp.groups?.name ?? '').replace(/^Group\s*/i, '') || '?'
+
+    const homeComp = comp.competitors.find(c => c.homeAway === 'home')
+    const awayComp = comp.competitors.find(c => c.homeAway === 'away')
+    if (!homeComp || !awayComp) continue
+
+    const homeCode = (homeComp.team?.abbreviation ?? '').toUpperCase()
+    const awayCode = (awayComp.team?.abbreviation ?? '').toUpperCase()
+    const homeScore = parseInt(homeComp.score ?? '', 10)
+    const awayScore = parseInt(awayComp.score ?? '', 10)
+
+    if (!homeCode || !awayCode || isNaN(homeScore) || isNaN(awayScore)) continue
+
+    if (!results[groupName]) results[groupName] = []
+    results[groupName].push({ home: homeCode, away: awayCode, homeScore, awayScore })
+  }
+
+  return results
+}
+
 export async function getUpcomingMatches(tournament = 'world_cup_2026'): Promise<ESPNEvent[]> {
   const data = await getScoreboard(tournament)
   return data?.events ?? []
