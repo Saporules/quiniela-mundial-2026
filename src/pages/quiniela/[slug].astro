@@ -54,9 +54,12 @@ if (Object.keys(groupStandings).length > 0) {
     const fixtures = groupFixtures[groupName] ?? []
     for (const standing of groupStandingsList) {
       const status = resolveStatus(standing.teamCode, groupName, groupStandingsList, groupStandings, fixtures, groupResults)
-      const conditions = (status === 'contending' || status === 'third') && standing.played >= 2
+      let conditions = (status === 'contending' || status === 'third') && standing.played >= 2
         ? formatConditions(standing.teamCode, groupStandingsList, fixtures)
         : []
+      if (conditions.length === 0 && status === 'third') {
+        conditions = ['Actualmente entre los 8 mejores terceros. Avanza si mantiene esta posición al cierre de la fase de grupos.']
+      }
       qualificationMap[standing.teamCode] = { status, conditions }
     }
   }
