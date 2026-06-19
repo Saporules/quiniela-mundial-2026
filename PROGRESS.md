@@ -116,6 +116,18 @@ railway.json        — Config de build/deploy para Railway
 - [x] Admin: crear/editar/eliminar quinielas, gestionar participantes
 - [x] Asignación aleatoria de equipos
 
+## [CURRENT BUFFER]
+
+_Buffer vacío — pendiente próximo hito._
+
+---
+
+## [HISTORICAL LOG]
+
+- 2026-06-17 | Correcciones auditoría — qualification tooltip | Éxito | 41/41 tests, 7 pasos completados, 4 commits, 0 críticos
+
+---
+
 ## Historial de errores resueltos
 | Error | Causa | Fix |
 |---|---|---|

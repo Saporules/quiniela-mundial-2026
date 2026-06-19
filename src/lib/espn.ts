@@ -105,10 +105,18 @@ export interface GroupStanding {
   drawn: number
   lost: number
   gd: number
+  gf: number
   points: number
 }
 
 export type GroupStandingsMap = Record<string, GroupStanding[]>
+
+export interface CompletedMatch {
+  home: string
+  away: string
+  homeScore: number
+  awayScore: number
+}
 
 export async function getGroupStandings(tournament = 'world_cup_2026'): Promise<GroupStandingsMap> {
   const raw = await getStandings(tournament) as any
@@ -149,6 +157,7 @@ export async function getGroupStandings(tournament = 'world_cup_2026'): Promise<
         drawn:  stat('ties')  || stat('draws') || stat('drawn'),
         lost:   stat('losses') || stat('lost'),
         gd:     stat('pointDifferential') || stat('goalDifference') || stat('gd'),
+        gf:     stat('pointsFor') || stat('goalsFor') || stat('gf'),
         points: stat('points'),
       }
     })
@@ -158,6 +167,71 @@ export async function getGroupStandings(tournament = 'world_cup_2026'): Promise<
   }
 
   return result
+}
+
+export async function getGroupFixtures(
+  tournament = 'world_cup_2026',
+): Promise<Record<string, Array<{ home: string; away: string }>>> {
+  const data = await getScoreboard(tournament)
+  const fixtures: Record<string, Array<{ home: string; away: string }>> = {}
+
+  if (!data?.events) return fixtures
+
+  for (const event of data.events) {
+    if (event.status.type.state !== 'pre') continue
+
+    const comp = event.competitions?.[0]
+    if (!comp?.groups || !comp.competitors || comp.competitors.length < 2) continue
+
+    const groupName =
+      (comp.groups?.shortName ?? comp.groups?.name ?? '').replace(/^Group\s*/i, '') || '?'
+
+    const [home, away] = comp.competitors
+    const homeCode = (home?.team?.abbreviation ?? '').toUpperCase()
+    const awayCode = (away?.team?.abbreviation ?? '').toUpperCase()
+
+    if (!homeCode || !awayCode) continue
+
+    if (!fixtures[groupName]) fixtures[groupName] = []
+    fixtures[groupName].push({ home: homeCode, away: awayCode })
+  }
+
+  return fixtures
+}
+
+export async function getGroupResults(
+  tournament = 'world_cup_2026',
+): Promise<Record<string, CompletedMatch[]>> {
+  const data = await getScoreboard(tournament)
+  const results: Record<string, CompletedMatch[]> = {}
+
+  if (!data?.events) return results
+
+  for (const event of data.events) {
+    if (!event.status.type.completed) continue
+
+    const comp = event.competitions?.[0]
+    if (!comp?.groups || !comp.competitors || comp.competitors.length < 2) continue
+
+    const groupName =
+      (comp.groups?.shortName ?? comp.groups?.name ?? '').replace(/^Group\s*/i, '') || '?'
+
+    const homeComp = comp.competitors.find(c => c.homeAway === 'home')
+    const awayComp = comp.competitors.find(c => c.homeAway === 'away')
+    if (!homeComp || !awayComp) continue
+
+    const homeCode = (homeComp.team?.abbreviation ?? '').toUpperCase()
+    const awayCode = (awayComp.team?.abbreviation ?? '').toUpperCase()
+    const homeScore = parseInt(homeComp.score ?? '', 10)
+    const awayScore = parseInt(awayComp.score ?? '', 10)
+
+    if (!homeCode || !awayCode || isNaN(homeScore) || isNaN(awayScore)) continue
+
+    if (!results[groupName]) results[groupName] = []
+    results[groupName].push({ home: homeCode, away: awayCode, homeScore, awayScore })
+  }
+
+  return results
 }
 
 export async function getUpcomingMatches(tournament = 'world_cup_2026'): Promise<ESPNEvent[]> {
