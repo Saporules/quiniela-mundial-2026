@@ -169,10 +169,32 @@ export async function getGroupStandings(tournament = 'world_cup_2026'): Promise<
   return result
 }
 
+// Build a team-code → group-name map from standings (used when ESPN omits groups field)
+async function buildTeamGroupMap(tournament: string): Promise<Record<string, string>> {
+  const standings = await getGroupStandings(tournament)
+  const map: Record<string, string> = {}
+  for (const [group, teams] of Object.entries(standings)) {
+    for (const team of teams) map[team.teamCode] = group
+  }
+  return map
+}
+
 export async function getGroupFixtures(
   tournament = 'world_cup_2026',
 ): Promise<Record<string, Array<{ home: string; away: string }>>> {
-  const data = await getScoreboard(tournament)
+  const slug = LEAGUE_SLUGS[tournament] ?? LEAGUE_SLUGS['world_cup_2026']!
+  const now  = new Date()
+  const todayMex  = toMexDateParam(now)
+  const futureEnd = toMexDateParam(new Date(now.getTime() + 14 * 86_400_000))
+
+  // Fetch next 2 weeks to capture all remaining group-stage fixtures
+  const data = await fetchWithCache<ESPNScoreboard>(
+    `${ESPN_BASE}/${slug}/scoreboard?dates=${todayMex}-${futureEnd}&limit=100`,
+    `scoreboard:${slug}:fixtures:${todayMex}`,
+    10,
+  )
+
+  const teamGroup = await buildTeamGroupMap(tournament)
   const fixtures: Record<string, Array<{ home: string; away: string }>> = {}
 
   if (!data?.events) return fixtures
@@ -181,16 +203,25 @@ export async function getGroupFixtures(
     if (event.status.type.state !== 'pre') continue
 
     const comp = event.competitions?.[0]
-    if (!comp?.groups || !comp.competitors || comp.competitors.length < 2) continue
+    if (!comp?.competitors || comp.competitors.length < 2) continue
 
-    const groupName =
-      (comp.groups?.shortName ?? comp.groups?.name ?? '').replace(/^Group\s*/i, '') || '?'
+    const homeComp = comp.competitors.find(c => c.homeAway === 'home')
+    const awayComp = comp.competitors.find(c => c.homeAway === 'away')
+    if (!homeComp || !awayComp) continue
 
-    const [home, away] = comp.competitors
-    const homeCode = (home?.team?.abbreviation ?? '').toUpperCase()
-    const awayCode = (away?.team?.abbreviation ?? '').toUpperCase()
-
+    const homeCode = (homeComp.team?.abbreviation ?? '').toUpperCase()
+    const awayCode = (awayComp.team?.abbreviation ?? '').toUpperCase()
     if (!homeCode || !awayCode) continue
+
+    // ESPN often omits comp.groups — fall back to standings-derived map.
+    // Only use the map when BOTH teams share the same group (excludes knockout placeholders like "3RD").
+    const homeGroup = teamGroup[homeCode]
+    const awayGroup = teamGroup[awayCode]
+    const groupName =
+      (comp.groups?.shortName ?? comp.groups?.name ?? '').replace(/^Group\s*/i, '') ||
+      (homeGroup && homeGroup === awayGroup ? homeGroup : '')
+
+    if (!groupName) continue
 
     if (!fixtures[groupName]) fixtures[groupName] = []
     fixtures[groupName].push({ home: homeCode, away: awayCode })
@@ -202,7 +233,19 @@ export async function getGroupFixtures(
 export async function getGroupResults(
   tournament = 'world_cup_2026',
 ): Promise<Record<string, CompletedMatch[]>> {
-  const data = await getScoreboard(tournament)
+  const slug = LEAGUE_SLUGS[tournament] ?? LEAGUE_SLUGS['world_cup_2026']!
+  const now  = new Date()
+  const todayMex = toMexDateParam(now)
+  // Fetch from tournament start to cover all completed matches
+  const startMex = toMexDateParam(new Date('2026-06-11T00:00:00'))
+
+  const data = await fetchWithCache<ESPNScoreboard>(
+    `${ESPN_BASE}/${slug}/scoreboard?dates=${startMex}-${todayMex}&limit=200`,
+    `scoreboard:${slug}:results:${todayMex}`,
+    15,
+  )
+
+  const teamGroup = await buildTeamGroupMap(tournament)
   const results: Record<string, CompletedMatch[]> = {}
 
   if (!data?.events) return results
@@ -211,10 +254,7 @@ export async function getGroupResults(
     if (!event.status.type.completed) continue
 
     const comp = event.competitions?.[0]
-    if (!comp?.groups || !comp.competitors || comp.competitors.length < 2) continue
-
-    const groupName =
-      (comp.groups?.shortName ?? comp.groups?.name ?? '').replace(/^Group\s*/i, '') || '?'
+    if (!comp?.competitors || comp.competitors.length < 2) continue
 
     const homeComp = comp.competitors.find(c => c.homeAway === 'home')
     const awayComp = comp.competitors.find(c => c.homeAway === 'away')
@@ -226,6 +266,13 @@ export async function getGroupResults(
     const awayScore = parseInt(awayComp.score ?? '', 10)
 
     if (!homeCode || !awayCode || isNaN(homeScore) || isNaN(awayScore)) continue
+
+    const groupName =
+      (comp.groups?.shortName ?? comp.groups?.name ?? '').replace(/^Group\s*/i, '') ||
+      teamGroup[homeCode] ||
+      teamGroup[awayCode]
+
+    if (!groupName) continue
 
     if (!results[groupName]) results[groupName] = []
     results[groupName].push({ home: homeCode, away: awayCode, homeScore, awayScore })
