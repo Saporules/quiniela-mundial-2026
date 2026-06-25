@@ -9,7 +9,7 @@ import {
 } from '../../lib/db.js'
 import { getParticipantByToken } from '../../lib/db.js'
 import { getTeam, TIER_CONFIG, TEAMS } from '../../lib/teams.js'
-import { getMatchSchedule, getGroupStandings, getGroupFixtures, getGroupResults } from '../../lib/espn.js'
+import { getMatchSchedule, getGroupStandings, getGroupFixtures, getGroupResults, getKnockoutMatches } from '../../lib/espn.js'
 import { getLeftoverTeams } from '../../lib/assignment.js'
 import { resolveStatus, formatConditions } from '../../lib/qualification.js'
 import type { GroupQualificationMap } from '../../lib/qualification.js'
@@ -40,11 +40,12 @@ const claims       = await getClaims(q.id)
 const leftover     = q.status !== 'setup' ? await getLeftoverTeams(q.id) : []
 
 // Live matches from ESPN
-const [{ today: matchesToday, week: matchesWeek, previewMode }, groupStandings, groupFixtures, groupResults] = await Promise.all([
+const [{ today: matchesToday, week: matchesWeek, previewMode }, groupStandings, groupFixtures, groupResults, knockout] = await Promise.all([
   getMatchSchedule(q.tournament),
   getGroupStandings(q.tournament),
   getGroupFixtures(q.tournament),
   getGroupResults(q.tournament),
+  getKnockoutMatches(q.tournament),
 ])
 
 // Build qualification status map
@@ -165,7 +166,7 @@ const hasGroupData = Object.keys(groupStandings).length > 0
 
     <!-- Tab: Llaves -->
     {tab === 'llaves' && (
-      <Bracket assignments={assignmentsList()} />
+      <Bracket assignments={assignmentsList()} knockout={knockout} />
     )}
 
     <!-- Tab: Partidos -->

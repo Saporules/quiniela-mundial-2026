@@ -1,47 +1,61 @@
 ---
+import { getTeam } from '../lib/teams.js'
+import type { KnockoutRounds, KnockoutMatch } from '../lib/espn.js'
+
 interface Props {
   assignments: Array<{ team_code: string; participant_name: string; share_percentage: number }>
+  knockout?: KnockoutRounds
 }
-const { assignments } = Astro.props
+const { knockout } = Astro.props
+
+const ko: KnockoutRounds = knockout ?? { r32: [], r16: [], qf: [], sf: [], third: [], final: [] }
+
+// Turn an ESPN code into a display label: real team → "🇧🇷 Brasil";
+// group placeholder → "2°F" / "3ro"; later-round placeholder (RD32, QFW1…) → null (TBD).
+function label(code: string | undefined): string | null {
+  if (!code) return null
+  const team = getTeam(code)
+  if (team) return `${team.flag} ${team.name}`
+  const grp = code.match(/^([123])([A-L])$/)
+  if (grp) return `${grp[1]}°${grp[2]}`
+  if (code === '3RD') return '3ro'
+  return null
+}
+
+interface DMatch {
+  home: string | null; away: string | null
+  homeScore: number | null; awayScore: number | null
+  live: boolean
+  date: string | null    // ISO kickoff; formatted to the viewer's local time on the client
+}
+
+// Map a round's ESPN matches into fixed-length display slots (pads with empty TBD slots).
+function build(list: KnockoutMatch[], count: number): DMatch[] {
+  return Array.from({ length: count }, (_, i) => {
+    const m = list[i]
+    return m
+      ? { home: label(m.home), away: label(m.away), homeScore: m.homeScore, awayScore: m.awayScore, live: m.state === 'in', date: m.date }
+      : { home: null, away: null, homeScore: null, awayScore: null, live: false, date: null }
+  })
+}
 
 const rounds = [
-  {
-    name: 'Ronda 32', short: 'R32',
-    matches: Array.from({ length: 16 }, (_, i) => ({
-      id: `r32-${i}`, home: null, away: null, homeScore: null, awayScore: null, status: 'pre',
-    })),
-  },
-  {
-    name: 'Octavos', short: 'R16',
-    matches: Array.from({ length: 8 }, (_, i) => ({
-      id: `r16-${i}`, home: null, away: null, homeScore: null, awayScore: null, status: 'pre',
-    })),
-  },
-  {
-    name: 'Cuartos', short: 'QF',
-    matches: Array.from({ length: 4 }, (_, i) => ({
-      id: `qf-${i}`, home: null, away: null, homeScore: null, awayScore: null, status: 'pre',
-    })),
-  },
-  {
-    name: 'Semis', short: 'SF',
-    matches: Array.from({ length: 2 }, (_, i) => ({
-      id: `sf-${i}`, home: null, away: null, homeScore: null, awayScore: null, status: 'pre',
-    })),
-  },
-  {
-    name: 'Final', short: 'F',
-    matches: [{ id: 'final', home: null, away: null, homeScore: null, awayScore: null, status: 'pre' }],
-  },
+  { name: 'Ronda 32',   short: 'R32', matches: build(ko.r32, 16) },
+  { name: 'Octavos',    short: 'R16', matches: build(ko.r16, 8) },
+  { name: 'Cuartos',    short: 'QF',  matches: build(ko.qf, 4) },
+  { name: 'Semis',      short: 'SF',  matches: build(ko.sf, 2) },
+  { name: 'Final',      short: 'F',   matches: build(ko.final, 1) },
+  { name: '3er Puesto', short: '3°',  matches: build(ko.third, 1) },
 ]
 
-// Helper: left-side match card (name left, score right)
-// Helper: right-side match card (score left, name right) — handled in template
+const hasData = [ko.r32, ko.r16, ko.qf, ko.sf, ko.final].some(r => r.length > 0)
 ---
 
 <section>
   <h2 class="font-display text-3xl text-wc-gold mb-2 tracking-wide">LLAVES</h2>
-  <p class="text-sm text-wc-muted mb-4">La fase eliminatoria comienza cuando terminan los grupos</p>
+  <p class="text-sm text-wc-muted mb-4">
+    {hasData ? 'Cuadro de eliminación directa · se actualiza en vivo' : 'La fase eliminatoria comienza cuando terminan los grupos'}
+  </p>
 
   <!-- Toggle button -->
   <div class="flex items-center gap-3 mb-6">
@@ -119,11 +133,11 @@ const rounds = [
           <div class="bracket-match card p-2 text-xs mt-8">
             <div class="flex justify-between items-center py-0.5">
               <span class="text-wc-muted truncate">{rounds[3]!.matches[0]!.home ?? 'TBD'}</span>
-              <span class="font-bold ml-2 text-wc-gold">-</span>
+              <span class="font-bold ml-2 text-wc-gold">{rounds[3]!.matches[0]!.homeScore ?? '-'}</span>
             </div>
             <div class="flex justify-between items-center py-0.5">
               <span class="text-wc-muted truncate">{rounds[3]!.matches[0]!.away ?? 'TBD'}</span>
-              <span class="font-bold ml-2 text-wc-gold">-</span>
+              <span class="font-bold ml-2 text-wc-gold">{rounds[3]!.matches[0]!.awayScore ?? '-'}</span>
             </div>
           </div>
         </div>
@@ -142,12 +156,12 @@ const rounds = [
           <div class="card p-3 border-wc-gold/40 min-w-[180px]">
             <div class="flex justify-between items-center py-1">
               <span class="text-white font-semibold">{rounds[4]!.matches[0]!.home ?? 'TBD'}</span>
-              <span class="font-display text-wc-gold text-xl ml-3">-</span>
+              <span class="font-display text-wc-gold text-xl ml-3">{rounds[4]!.matches[0]!.homeScore ?? '-'}</span>
             </div>
             <div class="border-t border-wc-border my-1"></div>
             <div class="flex justify-between items-center py-1">
               <span class="text-white font-semibold">{rounds[4]!.matches[0]!.away ?? 'TBD'}</span>
-              <span class="font-display text-wc-gold text-xl ml-3">-</span>
+              <span class="font-display text-wc-gold text-xl ml-3">{rounds[4]!.matches[0]!.awayScore ?? '-'}</span>
             </div>
           </div>
         </div>
@@ -160,11 +174,11 @@ const rounds = [
           <p class="font-display text-wc-muted text-xs text-center mb-1">SEMIFINAL</p>
           <div class="bracket-match card p-2 text-xs mt-8">
             <div class="flex justify-between items-center py-0.5">
-              <span class="font-bold mr-2 text-wc-gold">-</span>
+              <span class="font-bold mr-2 text-wc-gold">{rounds[3]!.matches[1]?.homeScore ?? '-'}</span>
               <span class="text-wc-muted truncate text-right">{rounds[3]!.matches[1]?.home ?? 'TBD'}</span>
             </div>
             <div class="flex justify-between items-center py-0.5">
-              <span class="font-bold mr-2 text-wc-gold">-</span>
+              <span class="font-bold mr-2 text-wc-gold">{rounds[3]!.matches[1]?.awayScore ?? '-'}</span>
               <span class="text-wc-muted truncate text-right">{rounds[3]!.matches[1]?.away ?? 'TBD'}</span>
             </div>
           </div>
@@ -245,16 +259,24 @@ const rounds = [
         <h3 class="font-semibold text-wc-gold mb-3">{round.name}</h3>
         <div class="space-y-2">
           {round.matches.map((match) => (
-            <div class="card p-3 flex items-center gap-3">
-              <div class="flex-1 text-sm font-medium text-wc-muted">
-                {match.home ?? 'Por definir'}
+            <div class="card p-3">
+              <div class="flex items-center gap-3">
+                <div class="flex-1 text-sm font-medium text-wc-muted">
+                  {match.home ?? 'Por definir'}
+                </div>
+                <div class="px-3 py-1 bg-wc-dark rounded font-display text-wc-gold text-lg">
+                  {match.homeScore !== null ? match.homeScore : '-'} : {match.awayScore !== null ? match.awayScore : '-'}
+                </div>
+                <div class="flex-1 text-sm font-medium text-wc-muted text-right">
+                  {match.away ?? 'Por definir'}
+                </div>
               </div>
-              <div class="px-3 py-1 bg-wc-dark rounded font-display text-wc-gold text-lg">
-                {match.homeScore !== null ? match.homeScore : '-'} : {match.awayScore !== null ? match.awayScore : '-'}
-              </div>
-              <div class="flex-1 text-sm font-medium text-wc-muted text-right">
-                {match.away ?? 'Por definir'}
-              </div>
+              {match.date && (
+                <p class="text-[11px] text-wc-muted/80 text-center mt-2 flex items-center justify-center gap-1">
+                  <i class="ph ph-calendar-blank"></i>
+                  <span class="ko-date" data-utc={match.date}>—</span>
+                </p>
+              )}
             </div>
           ))}
         </div>
@@ -311,5 +333,21 @@ function showRound(idx) {
 
   // Center the bracket on load
   el.scrollLeft = (el.scrollWidth - el.clientWidth) / 2
+})()
+
+// Format each knockout kickoff to the viewer's local date/time (system timezone),
+// keeping the UI's Spanish locale.
+;(function formatKnockoutDates() {
+  var fmt = new Intl.DateTimeFormat('es-MX', {
+    weekday: 'short', day: '2-digit', month: 'short',
+    hour: '2-digit', minute: '2-digit', hour12: true,
+  })
+  document.querySelectorAll('.ko-date[data-utc]').forEach(function (el) {
+    var iso = el.getAttribute('data-utc')
+    if (!iso) return
+    var d = new Date(iso)
+    if (isNaN(d.getTime())) return
+    el.textContent = fmt.format(d)
+  })
 })()
 </script>

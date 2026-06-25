@@ -286,6 +286,84 @@ export async function getUpcomingMatches(tournament = 'world_cup_2026'): Promise
   return data?.events ?? []
 }
 
+// ─── Knockout bracket ──────────────────────────────────────────────────────────
+
+export interface KnockoutMatch {
+  home: string            // team code or ESPN placeholder ("BRA", "2F", "3RD", "RD32"…)
+  away: string
+  homeScore: number | null
+  awayScore: number | null
+  state: 'pre' | 'in' | 'post'
+  date: string
+}
+
+export interface KnockoutRounds {
+  r32: KnockoutMatch[]
+  r16: KnockoutMatch[]
+  qf: KnockoutMatch[]
+  sf: KnockoutMatch[]
+  third: KnockoutMatch[]
+  final: KnockoutMatch[]
+}
+
+// ESPN tags each knockout event with the round via `season.slug`.
+const KNOCKOUT_SLUG_MAP: Record<string, keyof KnockoutRounds> = {
+  'round-of-32':     'r32',
+  'round-of-16':     'r16',
+  'quarterfinals':   'qf',
+  'semifinals':      'sf',
+  '3rd-place-match': 'third',
+  'final':           'final',
+}
+
+// Date window covering the WC2026 knockout phase (R32 → final).
+const KNOCKOUT_WINDOW: Record<string, string> = {
+  world_cup_2026: '20260628-20260720',
+}
+
+export async function getKnockoutMatches(tournament = 'world_cup_2026'): Promise<KnockoutRounds> {
+  const slug = LEAGUE_SLUGS[tournament] ?? LEAGUE_SLUGS['world_cup_2026']!
+  const window = KNOCKOUT_WINDOW[tournament] ?? KNOCKOUT_WINDOW['world_cup_2026']!
+
+  const data = await fetchWithCache<ESPNScoreboard>(
+    `${ESPN_BASE}/${slug}/scoreboard?dates=${window}&limit=100`,
+    `scoreboard:${slug}:knockout`,
+    5,
+  )
+
+  const rounds: KnockoutRounds = { r32: [], r16: [], qf: [], sf: [], third: [], final: [] }
+  if (!data?.events) return rounds
+
+  // Sort by date so each round's matches keep a stable bracket order.
+  const events = [...data.events].sort((a, b) => a.date.localeCompare(b.date))
+
+  for (const event of events) {
+    const roundKey = KNOCKOUT_SLUG_MAP[event.season?.slug ?? '']
+    if (!roundKey) continue
+
+    const comp = event.competitions?.[0]
+    if (!comp?.competitors || comp.competitors.length < 2) continue
+    const homeComp = comp.competitors.find(c => c.homeAway === 'home')
+    const awayComp = comp.competitors.find(c => c.homeAway === 'away')
+    if (!homeComp || !awayComp) continue
+
+    const state = (event.status.type.state as 'pre' | 'in' | 'post') ?? 'pre'
+    const hs = parseInt(homeComp.score ?? '', 10)
+    const as = parseInt(awayComp.score ?? '', 10)
+
+    rounds[roundKey].push({
+      home: (homeComp.team?.abbreviation ?? '').toUpperCase(),
+      away: (awayComp.team?.abbreviation ?? '').toUpperCase(),
+      homeScore: state === 'pre' || isNaN(hs) ? null : hs,
+      awayScore: state === 'pre' || isNaN(as) ? null : as,
+      state,
+      date: event.date,
+    })
+  }
+
+  return rounds
+}
+
 function toDateParam(d: Date): string {
   return d.toISOString().slice(0, 10).replace(/-/g, '')
 }
