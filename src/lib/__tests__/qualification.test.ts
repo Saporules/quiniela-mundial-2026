@@ -312,6 +312,71 @@ describe('computeTop2', () => {
     const blockedFixtures = [m('TEAM', 'T3'), m('T1', 'T2')]
     expect(computeTop2('TEAM', blockedGroup, blockedFixtures)).toBe('contending')
   })
+
+  /*
+   * ── Mathematically-open guard tests ─────────────────────────────────────────
+   *
+   * A team must NOT be shown as qualified/eliminated while its top-2 fate is still
+   * open, even when a naive worst/best-case "corner" check would wrongly close it.
+   * These reproduce real situations where an intermediate scoreline (not an extreme
+   * one) decides the team's fate via the FIFA head-to-head / goals-for tiebreaks.
+   */
+
+  it('should stay contending when an AWAY rival can overtake on GD despite a head-to-head edge', () => {
+    /*
+     * Real WC2026 Group B snapshot. SUI beat BIH 4-1, so SUI wins any points tie
+     * with BIH on head-to-head. But QAT (the AWAY side of BIH vs QAT) can overtake
+     * SUI on overall GD: if SUI loses big to CAN and QAT beats BIH big, the final
+     * order is CAN, QAT, SUI → SUI 3rd. Qualification is NOT closed.
+     */
+    const groupB = [
+      s('CAN', 2, 4, +6, 7, 1, 1, 0),
+      s('SUI', 2, 4, +3, 5, 1, 1, 0),
+      s('BIH', 2, 1, -3, 2, 0, 1, 1),
+      s('QAT', 2, 1, -6, 1, 0, 1, 1),
+    ]
+    const fixturesB = [m('BIH', 'QAT'), m('SUI', 'CAN')]
+    const pastB = [
+      cr('CAN', 'BIH', 1, 1),
+      cr('QAT', 'SUI', 1, 1),
+      cr('SUI', 'BIH', 4, 1),
+      cr('CAN', 'QAT', 6, 0),
+    ]
+    expect(computeTop2('SUI', groupB, fixturesB, pastB)).toBe('contending')
+  })
+
+  it('should stay contending when a high-scoring draw between rivals breaks a 3-way tie on goals-for', () => {
+    /*
+     * BRA has finished all 3 games on 5pts and drew both BRA-ESP (2-2) and BRA-FRA
+     * (2-2). If the remaining ESP-FRA, ARG-ESP, ARG-FRA produce a 3-way tie at 5pts
+     * (BRA, ESP, FRA) where ESP-FRA is a high-scoring draw, the head-to-head GOALS-FOR
+     * lifts ESP and FRA above BRA → BRA 3rd. A 0-0-draw "corner" check misses this;
+     * only the intermediate high draw exposes it. So BRA is NOT yet qualified.
+     */
+    const group = [
+      s('ARG', 1, 0, -2, 0, 0, 0, 1),
+      s('BRA', 3, 5, +2, 6, 1, 2, 0),
+      s('ESP', 1, 1,  0, 2, 0, 1, 0),
+      s('FRA', 1, 1,  0, 2, 0, 1, 0),
+    ]
+    const fixtures = [m('ESP', 'FRA'), m('ARG', 'ESP'), m('ARG', 'FRA')]
+    const past = [cr('BRA', 'ESP', 2, 2), cr('BRA', 'FRA', 2, 2), cr('ARG', 'BRA', 0, 2)]
+    expect(computeTop2('BRA', group, fixtures, past)).toBe('contending')
+  })
+
+  it('should treat a group with more than 3 matches left as undecided (all contending)', () => {
+    // After only the opening round (≤1 game each, 4+ fixtures left) no top-2 place
+    // can be mathematically settled — even a 3-0 winner is kept contending.
+    const earlyGroup = [
+      s('NED', 1, 3, +3, 3, 1, 0, 0),
+      s('URU', 1, 1,  0, 1, 0, 1, 0),
+      s('JPN', 1, 1,  0, 1, 0, 1, 0),
+      s('GHA', 1, 0, -3, 0, 0, 0, 1),
+    ]
+    const earlyFixtures = [m('NED', 'URU'), m('JPN', 'GHA'), m('NED', 'JPN'), m('URU', 'GHA')]
+    expect(computeTop2('NED', earlyGroup, earlyFixtures)).toBe('contending')
+    expect(computeTop2('GHA', earlyGroup, earlyFixtures)).toBe('contending')
+  })
 })
 
 // ─── rankThirds ───────────────────────────────────────────────────────────────

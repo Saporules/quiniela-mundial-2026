@@ -115,6 +115,10 @@ railway.json        — Config de build/deploy para Railway
 - [x] Botón compartir (WhatsApp en móvil, copiar link en desktop)
 - [x] Admin: crear/editar/eliminar quinielas, gestionar participantes
 - [x] Asignación aleatoria de equipos
+- [x] Tooltip de clasificación con condiciones textuales (¿qué necesita para pasar?)
+- [x] Criterio H2H completo FIFA 2026: pts → H2H pts → H2H GD → H2H GF → GD → GF → FIFA rank
+- [x] Puntos de grupos en tab contendientes (total por participante + pts por equipo)
+- [x] Partidos: scores en vivo, scores finales, indicador en vivo pulsante, timezone México
 
 ## [CURRENT BUFFER]
 
@@ -125,6 +129,7 @@ _Buffer vacío — pendiente próximo hito._
 ## [HISTORICAL LOG]
 
 - 2026-06-17 | Correcciones auditoría — qualification tooltip | Éxito | 41/41 tests, 7 pasos completados, 4 commits, 0 críticos
+- 2026-06-19 | H2H FIFA 2026 + mid-tournament fix + partidos timezone + live scores | Éxito | 48/48 tests, merge a main
 
 ---
 
@@ -138,3 +143,6 @@ _Buffer vacío — pendiente próximo hito._
 | `HOST=localhost` en Railway | Astro no bindea a 0.0.0.0 | Setear `HOST=0.0.0.0` en Railway vars |
 | DB se borra en redeploy | Filesystem efímero en Railway | Pendiente: migrar a Turso |
 | nixpacks ignora .node-version | Cache de build | Usar NIXPACKS_NODE_VERSION en toml |
+| Equipos clasificados con 1 partido jugado | ESPN fixtures=[] → grupo "terminado" | estimateWithoutFixtures con análisis pts máximos posibles |
+| Partidos del día siguiente mostrados como HOY | toDateParam usaba UTC (toISOString) | toMexDateParam con Intl en America/Mexico_City |
+| Scores grises durante partido en vivo | winner=false mientras se juega | Score blanco cuando status === 'in' |
