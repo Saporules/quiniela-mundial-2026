@@ -21,12 +21,21 @@ const { title, description = 'Quiniela del Mundial 2026 con tus amigos', isAdmin
   <link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/fill/style.css" />
   <link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/bold/style.css" />
   <style is:global>
+    /* Flag-only web font so country flags render on Windows (Chrome/Edge), whose
+       system emoji font draws regional-indicator pairs as plain letters ("ZA").
+       unicode-range limits it to flag codepoints; everything else falls to Inter. */
+    @font-face {
+      font-family: 'Twemoji Country Flags';
+      src: url('https://cdn.jsdelivr.net/npm/country-flag-emoji-polyfill@0.1.8/dist/TwemojiCountryFlags.woff2') format('woff2');
+      font-display: swap;
+      unicode-range: U+1F1E6-1F1FF, U+1F3F4, U+E0062-E007F;
+    }
     *, *::before, *::after { box-sizing: border-box; }
     body {
       background-color: #06060f;
       color: #f0f4f8;
       min-height: 100dvh;
-      font-family: 'Inter', system-ui, sans-serif;
+      font-family: 'Twemoji Country Flags', 'Inter', system-ui, sans-serif;
     }
     ::-webkit-scrollbar { width: 6px; height: 6px; }
     ::-webkit-scrollbar-track { background: #0f0f2a; }
