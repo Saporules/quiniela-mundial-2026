@@ -66,6 +66,15 @@ if (Object.keys(groupStandings).length > 0) {
   }
 }
 
+// Teams already out of the World Cup: group-stage eliminated + knockout losers.
+const eliminatedTeams = new Set<string>()
+for (const [code, qual] of Object.entries(qualificationMap)) {
+  if (qual.status === 'eliminated') eliminatedTeams.add(code)
+}
+for (const round of Object.values(knockout)) {
+  for (const m of round) if (m.loser) eliminatedTeams.add(m.loser)
+}
+
 // My teams (if participant)
 const myTeams = isParticipant
   ? assignments.filter(a => a.participant_id === participant!.id).map(a => ({ ...a, team: getTeam(a.team_code) }))
@@ -270,7 +279,7 @@ const hasGroupData = Object.keys(groupStandings).length > 0
                       <p class="text-xs text-wc-gold mb-1.5 flex items-center gap-1"><i class="ph-fill ph-star"></i> Favoritos</p>
                       <div class="flex flex-wrap gap-1.5">
                         {fav.map(a => (
-                          <span class="team-badge text-xs">
+                          <span class:list={['team-badge text-xs', eliminatedTeams.has(a.team_code) && 'team-eliminated']}>
                             {a.team!.flag} {a.team!.name}
                             {a.share_percentage < 100 && <span class="text-wc-gold"> {a.share_percentage.toFixed(0)}%</span>}
                             {getTeamGroupPoints(a.team_code) !== null && (
@@ -286,7 +295,7 @@ const hasGroupData = Object.keys(groupStandings).length > 0
                       <p class="text-xs text-blue-400 mb-1.5 flex items-center gap-1"><i class="ph-fill ph-fire"></i> Creyentes</p>
                       <div class="flex flex-wrap gap-1.5">
                         {cre.map(a => (
-                          <span class="team-badge text-xs">
+                          <span class:list={['team-badge text-xs', eliminatedTeams.has(a.team_code) && 'team-eliminated']}>
                             {a.team!.flag} {a.team!.name}
                             {a.share_percentage < 100 && <span class="text-wc-gold"> {a.share_percentage.toFixed(0)}%</span>}
                             {getTeamGroupPoints(a.team_code) !== null && (
@@ -302,7 +311,7 @@ const hasGroupData = Object.keys(groupStandings).length > 0
                       <p class="text-xs text-wc-muted mb-1.5 flex items-center gap-1"><i class="ph ph-briefcase"></i> Maletas</p>
                       <div class="flex flex-wrap gap-1.5">
                         {mal.map(a => (
-                          <span class="team-badge text-xs opacity-70">
+                          <span class:list={['team-badge text-xs opacity-70', eliminatedTeams.has(a.team_code) && 'team-eliminated']}>
                             {a.team!.flag} {a.team!.name}
                             {a.share_percentage < 100 && <span class="text-wc-gold"> {a.share_percentage.toFixed(0)}%</span>}
                             {getTeamGroupPoints(a.team_code) !== null && (

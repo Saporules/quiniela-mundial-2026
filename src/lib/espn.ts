@@ -295,6 +295,7 @@ export interface KnockoutMatch {
   awayScore: number | null
   state: 'pre' | 'in' | 'post'
   date: string
+  loser: string | null    // team code knocked out (uses ESPN winner flag → respects penalties)
 }
 
 export interface KnockoutRounds {
@@ -350,14 +351,28 @@ export async function getKnockoutMatches(tournament = 'world_cup_2026'): Promise
     const state = (event.status.type.state as 'pre' | 'in' | 'post') ?? 'pre'
     const hs = parseInt(homeComp.score ?? '', 10)
     const as = parseInt(awayComp.score ?? '', 10)
+    const homeCode = (homeComp.team?.abbreviation ?? '').toUpperCase()
+    const awayCode = (awayComp.team?.abbreviation ?? '').toUpperCase()
+
+    // Knocked-out team once the match is over. Prefer ESPN's winner flag (it accounts
+    // for penalty shootouts); fall back to the score when the flag isn't set yet.
+    let loser: string | null = null
+    if (state === 'post') {
+      if (homeComp.winner === true || awayComp.winner === true) {
+        loser = homeComp.winner ? awayCode : homeCode
+      } else if (!isNaN(hs) && !isNaN(as) && hs !== as) {
+        loser = hs < as ? homeCode : awayCode
+      }
+    }
 
     rounds[roundKey].push({
-      home: (homeComp.team?.abbreviation ?? '').toUpperCase(),
-      away: (awayComp.team?.abbreviation ?? '').toUpperCase(),
+      home: homeCode,
+      away: awayCode,
       homeScore: state === 'pre' || isNaN(hs) ? null : hs,
       awayScore: state === 'pre' || isNaN(as) ? null : as,
       state,
       date: event.date,
+      loser,
     })
   }
 
