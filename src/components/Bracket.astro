@@ -33,6 +33,7 @@ interface DMatch {
   home: string | null; away: string | null
   homeOwners: string[]; awayOwners: string[]
   homeScore: number | null; awayScore: number | null
+  homeShootout: number | null; awayShootout: number | null
   live: boolean
   date: string | null    // ISO kickoff; formatted to the viewer's local time on the client
 }
@@ -42,8 +43,8 @@ function build(list: KnockoutMatch[], count: number): DMatch[] {
   return Array.from({ length: count }, (_, i) => {
     const m = list[i]
     return m
-      ? { home: label(m.home), away: label(m.away), homeOwners: owners(m.home), awayOwners: owners(m.away), homeScore: m.homeScore, awayScore: m.awayScore, live: m.state === 'in', date: m.date }
-      : { home: null, away: null, homeOwners: [], awayOwners: [], homeScore: null, awayScore: null, live: false, date: null }
+      ? { home: label(m.home), away: label(m.away), homeOwners: owners(m.home), awayOwners: owners(m.away), homeScore: m.homeScore, awayScore: m.awayScore, homeShootout: m.homeShootout, awayShootout: m.awayShootout, live: m.state === 'in', date: m.date }
+      : { home: null, away: null, homeOwners: [], awayOwners: [], homeScore: null, awayScore: null, homeShootout: null, awayShootout: null, live: false, date: null }
   })
 }
 
@@ -94,14 +95,14 @@ const hasData = [ko.r32, ko.r16, ko.qf, ko.sf, ko.final].some(r => r.length > 0)
                   <span class="text-wc-muted truncate">{m.home ?? 'TBD'}</span>
                   {m.homeOwners.length > 0 && <span class="text-blue-300 text-[9px] truncate leading-tight">{m.homeOwners.join(', ')}</span>}
                 </span>
-                <span class="font-bold ml-2 text-wc-gold">{m.homeScore ?? '-'}</span>
+                <span class="font-bold ml-2 text-wc-gold">{m.homeScore ?? '-'}{m.homeShootout != null && <span class="text-[9px] text-wc-muted font-normal ml-0.5">({m.homeShootout})</span>}</span>
               </div>
               <div class="flex justify-between items-center py-0.5 hover:text-white transition-colors">
                 <span class="min-w-0 flex flex-col">
                   <span class="text-wc-muted truncate">{m.away ?? 'TBD'}</span>
                   {m.awayOwners.length > 0 && <span class="text-blue-300 text-[9px] truncate leading-tight">{m.awayOwners.join(', ')}</span>}
                 </span>
-                <span class="font-bold ml-2 text-wc-gold">{m.awayScore ?? '-'}</span>
+                <span class="font-bold ml-2 text-wc-gold">{m.awayScore ?? '-'}{m.awayShootout != null && <span class="text-[9px] text-wc-muted font-normal ml-0.5">({m.awayShootout})</span>}</span>
               </div>
             </div>
           ))}
@@ -117,14 +118,14 @@ const hasData = [ko.r32, ko.r16, ko.qf, ko.sf, ko.final].some(r => r.length > 0)
                   <span class="text-wc-muted truncate">{m.home ?? 'TBD'}</span>
                   {m.homeOwners.length > 0 && <span class="text-blue-300 text-[9px] truncate leading-tight">{m.homeOwners.join(', ')}</span>}
                 </span>
-                <span class="font-bold ml-2 text-wc-gold">{m.homeScore ?? '-'}</span>
+                <span class="font-bold ml-2 text-wc-gold">{m.homeScore ?? '-'}{m.homeShootout != null && <span class="text-[9px] text-wc-muted font-normal ml-0.5">({m.homeShootout})</span>}</span>
               </div>
               <div class="flex justify-between items-center py-0.5">
                 <span class="min-w-0 flex flex-col">
                   <span class="text-wc-muted truncate">{m.away ?? 'TBD'}</span>
                   {m.awayOwners.length > 0 && <span class="text-blue-300 text-[9px] truncate leading-tight">{m.awayOwners.join(', ')}</span>}
                 </span>
-                <span class="font-bold ml-2 text-wc-gold">{m.awayScore ?? '-'}</span>
+                <span class="font-bold ml-2 text-wc-gold">{m.awayScore ?? '-'}{m.awayShootout != null && <span class="text-[9px] text-wc-muted font-normal ml-0.5">({m.awayShootout})</span>}</span>
               </div>
             </div>
           ))}
@@ -140,14 +141,14 @@ const hasData = [ko.r32, ko.r16, ko.qf, ko.sf, ko.final].some(r => r.length > 0)
                   <span class="text-wc-muted truncate">{m.home ?? 'TBD'}</span>
                   {m.homeOwners.length > 0 && <span class="text-blue-300 text-[9px] truncate leading-tight">{m.homeOwners.join(', ')}</span>}
                 </span>
-                <span class="font-bold ml-2 text-wc-gold">{m.homeScore ?? '-'}</span>
+                <span class="font-bold ml-2 text-wc-gold">{m.homeScore ?? '-'}{m.homeShootout != null && <span class="text-[9px] text-wc-muted font-normal ml-0.5">({m.homeShootout})</span>}</span>
               </div>
               <div class="flex justify-between items-center py-0.5">
                 <span class="min-w-0 flex flex-col">
                   <span class="text-wc-muted truncate">{m.away ?? 'TBD'}</span>
                   {m.awayOwners.length > 0 && <span class="text-blue-300 text-[9px] truncate leading-tight">{m.awayOwners.join(', ')}</span>}
                 </span>
-                <span class="font-bold ml-2 text-wc-gold">{m.awayScore ?? '-'}</span>
+                <span class="font-bold ml-2 text-wc-gold">{m.awayScore ?? '-'}{m.awayShootout != null && <span class="text-[9px] text-wc-muted font-normal ml-0.5">({m.awayShootout})</span>}</span>
               </div>
             </div>
           ))}
@@ -162,14 +163,14 @@ const hasData = [ko.r32, ko.r16, ko.qf, ko.sf, ko.final].some(r => r.length > 0)
                 <span class="text-wc-muted truncate">{rounds[3]!.matches[0]!.home ?? 'TBD'}</span>
                 {rounds[3]!.matches[0]!.homeOwners.length > 0 && <span class="text-blue-300 text-[9px] truncate leading-tight">{rounds[3]!.matches[0]!.homeOwners.join(', ')}</span>}
               </span>
-              <span class="font-bold ml-2 text-wc-gold">{rounds[3]!.matches[0]!.homeScore ?? '-'}</span>
+              <span class="font-bold ml-2 text-wc-gold">{rounds[3]!.matches[0]!.homeScore ?? '-'}{rounds[3]!.matches[0]!.homeShootout != null && <span class="text-[9px] text-wc-muted font-normal ml-0.5">({rounds[3]!.matches[0]!.homeShootout})</span>}</span>
             </div>
             <div class="flex justify-between items-center py-0.5">
               <span class="min-w-0 flex flex-col">
                 <span class="text-wc-muted truncate">{rounds[3]!.matches[0]!.away ?? 'TBD'}</span>
                 {rounds[3]!.matches[0]!.awayOwners.length > 0 && <span class="text-blue-300 text-[9px] truncate leading-tight">{rounds[3]!.matches[0]!.awayOwners.join(', ')}</span>}
               </span>
-              <span class="font-bold ml-2 text-wc-gold">{rounds[3]!.matches[0]!.awayScore ?? '-'}</span>
+              <span class="font-bold ml-2 text-wc-gold">{rounds[3]!.matches[0]!.awayScore ?? '-'}{rounds[3]!.matches[0]!.awayShootout != null && <span class="text-[9px] text-wc-muted font-normal ml-0.5">({rounds[3]!.matches[0]!.awayShootout})</span>}</span>
             </div>
           </div>
         </div>
@@ -191,7 +192,7 @@ const hasData = [ko.r32, ko.r16, ko.qf, ko.sf, ko.final].some(r => r.length > 0)
                 <span class="text-white font-semibold truncate">{rounds[4]!.matches[0]!.home ?? 'TBD'}</span>
                 {rounds[4]!.matches[0]!.homeOwners.length > 0 && <span class="text-blue-300 text-[10px] truncate leading-tight">{rounds[4]!.matches[0]!.homeOwners.join(', ')}</span>}
               </span>
-              <span class="font-display text-wc-gold text-xl ml-3">{rounds[4]!.matches[0]!.homeScore ?? '-'}</span>
+              <span class="font-display text-wc-gold text-xl ml-3">{rounds[4]!.matches[0]!.homeScore ?? '-'}{rounds[4]!.matches[0]!.homeShootout != null && <span class="text-[10px] text-wc-muted ml-0.5">({rounds[4]!.matches[0]!.homeShootout})</span>}</span>
             </div>
             <div class="border-t border-wc-border my-1"></div>
             <div class="flex justify-between items-center py-1">
@@ -199,7 +200,7 @@ const hasData = [ko.r32, ko.r16, ko.qf, ko.sf, ko.final].some(r => r.length > 0)
                 <span class="text-white font-semibold truncate">{rounds[4]!.matches[0]!.away ?? 'TBD'}</span>
                 {rounds[4]!.matches[0]!.awayOwners.length > 0 && <span class="text-blue-300 text-[10px] truncate leading-tight">{rounds[4]!.matches[0]!.awayOwners.join(', ')}</span>}
               </span>
-              <span class="font-display text-wc-gold text-xl ml-3">{rounds[4]!.matches[0]!.awayScore ?? '-'}</span>
+              <span class="font-display text-wc-gold text-xl ml-3">{rounds[4]!.matches[0]!.awayScore ?? '-'}{rounds[4]!.matches[0]!.awayShootout != null && <span class="text-[10px] text-wc-muted ml-0.5">({rounds[4]!.matches[0]!.awayShootout})</span>}</span>
             </div>
           </div>
         </div>
@@ -212,14 +213,14 @@ const hasData = [ko.r32, ko.r16, ko.qf, ko.sf, ko.final].some(r => r.length > 0)
           <p class="font-display text-wc-muted text-xs text-center mb-1">SEMIFINAL</p>
           <div class="bracket-match card p-2 text-xs mt-8">
             <div class="flex justify-between items-center py-0.5">
-              <span class="font-bold mr-2 text-wc-gold">{rounds[3]!.matches[1]?.homeScore ?? '-'}</span>
+              <span class="font-bold mr-2 text-wc-gold">{(rounds[3]!.matches[1]?.homeShootout ?? null) != null && <span class="text-[9px] text-wc-muted font-normal mr-0.5">({rounds[3]!.matches[1]!.homeShootout})</span>}{rounds[3]!.matches[1]?.homeScore ?? '-'}</span>
               <span class="min-w-0 flex flex-col items-end">
                 <span class="text-wc-muted truncate text-right">{rounds[3]!.matches[1]?.home ?? 'TBD'}</span>
                 {(rounds[3]!.matches[1]?.homeOwners.length ?? 0) > 0 && <span class="text-blue-300 text-[9px] truncate leading-tight text-right">{rounds[3]!.matches[1]!.homeOwners.join(', ')}</span>}
               </span>
             </div>
             <div class="flex justify-between items-center py-0.5">
-              <span class="font-bold mr-2 text-wc-gold">{rounds[3]!.matches[1]?.awayScore ?? '-'}</span>
+              <span class="font-bold mr-2 text-wc-gold">{(rounds[3]!.matches[1]?.awayShootout ?? null) != null && <span class="text-[9px] text-wc-muted font-normal mr-0.5">({rounds[3]!.matches[1]!.awayShootout})</span>}{rounds[3]!.matches[1]?.awayScore ?? '-'}</span>
               <span class="min-w-0 flex flex-col items-end">
                 <span class="text-wc-muted truncate text-right">{rounds[3]!.matches[1]?.away ?? 'TBD'}</span>
                 {(rounds[3]!.matches[1]?.awayOwners.length ?? 0) > 0 && <span class="text-blue-300 text-[9px] truncate leading-tight text-right">{rounds[3]!.matches[1]!.awayOwners.join(', ')}</span>}
@@ -234,14 +235,14 @@ const hasData = [ko.r32, ko.r16, ko.qf, ko.sf, ko.final].some(r => r.length > 0)
           {rounds[2]!.matches.slice(2, 4).map((m) => (
             <div class="bracket-match card p-2 text-xs">
               <div class="flex justify-between items-center py-0.5">
-                <span class="font-bold mr-2 text-wc-gold">{m.homeScore ?? '-'}</span>
+                <span class="font-bold mr-2 text-wc-gold">{m.homeShootout != null && <span class="text-[9px] text-wc-muted font-normal mr-0.5">({m.homeShootout})</span>}{m.homeScore ?? '-'}</span>
                 <span class="min-w-0 flex flex-col items-end">
                   <span class="text-wc-muted truncate text-right">{m.home ?? 'TBD'}</span>
                   {m.homeOwners.length > 0 && <span class="text-blue-300 text-[9px] truncate leading-tight text-right">{m.homeOwners.join(', ')}</span>}
                 </span>
               </div>
               <div class="flex justify-between items-center py-0.5">
-                <span class="font-bold mr-2 text-wc-gold">{m.awayScore ?? '-'}</span>
+                <span class="font-bold mr-2 text-wc-gold">{m.awayShootout != null && <span class="text-[9px] text-wc-muted font-normal mr-0.5">({m.awayShootout})</span>}{m.awayScore ?? '-'}</span>
                 <span class="min-w-0 flex flex-col items-end">
                   <span class="text-wc-muted truncate text-right">{m.away ?? 'TBD'}</span>
                   {m.awayOwners.length > 0 && <span class="text-blue-300 text-[9px] truncate leading-tight text-right">{m.awayOwners.join(', ')}</span>}
@@ -257,14 +258,14 @@ const hasData = [ko.r32, ko.r16, ko.qf, ko.sf, ko.final].some(r => r.length > 0)
           {rounds[1]!.matches.slice(4, 8).map((m) => (
             <div class="bracket-match card p-2 text-xs">
               <div class="flex justify-between items-center py-0.5">
-                <span class="font-bold mr-2 text-wc-gold">{m.homeScore ?? '-'}</span>
+                <span class="font-bold mr-2 text-wc-gold">{m.homeShootout != null && <span class="text-[9px] text-wc-muted font-normal mr-0.5">({m.homeShootout})</span>}{m.homeScore ?? '-'}</span>
                 <span class="min-w-0 flex flex-col items-end">
                   <span class="text-wc-muted truncate text-right">{m.home ?? 'TBD'}</span>
                   {m.homeOwners.length > 0 && <span class="text-blue-300 text-[9px] truncate leading-tight text-right">{m.homeOwners.join(', ')}</span>}
                 </span>
               </div>
               <div class="flex justify-between items-center py-0.5">
-                <span class="font-bold mr-2 text-wc-gold">{m.awayScore ?? '-'}</span>
+                <span class="font-bold mr-2 text-wc-gold">{m.awayShootout != null && <span class="text-[9px] text-wc-muted font-normal mr-0.5">({m.awayShootout})</span>}{m.awayScore ?? '-'}</span>
                 <span class="min-w-0 flex flex-col items-end">
                   <span class="text-wc-muted truncate text-right">{m.away ?? 'TBD'}</span>
                   {m.awayOwners.length > 0 && <span class="text-blue-300 text-[9px] truncate leading-tight text-right">{m.awayOwners.join(', ')}</span>}
@@ -280,14 +281,14 @@ const hasData = [ko.r32, ko.r16, ko.qf, ko.sf, ko.final].some(r => r.length > 0)
           {rounds[0]!.matches.slice(8, 16).map((m) => (
             <div class="bracket-match card p-2 text-xs">
               <div class="flex justify-between items-center py-0.5">
-                <span class="font-bold mr-2 text-wc-gold">{m.homeScore ?? '-'}</span>
+                <span class="font-bold mr-2 text-wc-gold">{m.homeShootout != null && <span class="text-[9px] text-wc-muted font-normal mr-0.5">({m.homeShootout})</span>}{m.homeScore ?? '-'}</span>
                 <span class="min-w-0 flex flex-col items-end">
                   <span class="text-wc-muted truncate text-right">{m.home ?? 'TBD'}</span>
                   {m.homeOwners.length > 0 && <span class="text-blue-300 text-[9px] truncate leading-tight text-right">{m.homeOwners.join(', ')}</span>}
                 </span>
               </div>
               <div class="flex justify-between items-center py-0.5">
-                <span class="font-bold mr-2 text-wc-gold">{m.awayScore ?? '-'}</span>
+                <span class="font-bold mr-2 text-wc-gold">{m.awayShootout != null && <span class="text-[9px] text-wc-muted font-normal mr-0.5">({m.awayShootout})</span>}{m.awayScore ?? '-'}</span>
                 <span class="min-w-0 flex flex-col items-end">
                   <span class="text-wc-muted truncate text-right">{m.away ?? 'TBD'}</span>
                   {m.awayOwners.length > 0 && <span class="text-blue-300 text-[9px] truncate leading-tight text-right">{m.awayOwners.join(', ')}</span>}
@@ -333,8 +334,13 @@ const hasData = [ko.r32, ko.r16, ko.qf, ko.sf, ko.final].some(r => r.length > 0)
                     </div>
                   )}
                 </div>
-                <div class="px-3 py-1 bg-wc-dark rounded font-display text-wc-gold text-lg shrink-0">
-                  {match.homeScore !== null ? match.homeScore : '-'} : {match.awayScore !== null ? match.awayScore : '-'}
+                <div class="px-3 py-1 bg-wc-dark rounded shrink-0 text-center">
+                  <div class="font-display text-wc-gold text-lg leading-none">
+                    {match.homeScore !== null ? match.homeScore : '-'} : {match.awayScore !== null ? match.awayScore : '-'}
+                  </div>
+                  {(match.homeShootout != null || match.awayShootout != null) && (
+                    <div class="text-[10px] text-wc-muted font-normal mt-0.5 leading-none">pen. {match.homeShootout ?? 0}-{match.awayShootout ?? 0}</div>
+                  )}
                 </div>
                 <div class="flex-1 min-w-0">
                   <div class="text-sm font-medium text-wc-muted text-right">{match.away ?? 'Por definir'}</div>

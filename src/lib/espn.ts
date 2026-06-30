@@ -60,6 +60,7 @@ export interface ESPNCompetitor {
     logo: string; logos?: Array<{ href: string }>
   }
   score: string
+  shootoutScore?: number   // penalty-shootout goals (present only when the tie went to penalties)
   statistics?: Array<{ name: string; value: string | number }>
 }
 
@@ -293,6 +294,8 @@ export interface KnockoutMatch {
   away: string
   homeScore: number | null
   awayScore: number | null
+  homeShootout: number | null   // penalty-shootout goals (null unless the tie went to penalties)
+  awayShootout: number | null
   state: 'pre' | 'in' | 'post'
   date: string
   loser: string | null    // team code knocked out (uses ESPN winner flag → respects penalties)
@@ -370,6 +373,8 @@ export async function getKnockoutMatches(tournament = 'world_cup_2026'): Promise
       away: awayCode,
       homeScore: state === 'pre' || isNaN(hs) ? null : hs,
       awayScore: state === 'pre' || isNaN(as) ? null : as,
+      homeShootout: typeof homeComp.shootoutScore === 'number' ? homeComp.shootoutScore : null,
+      awayShootout: typeof awayComp.shootoutScore === 'number' ? awayComp.shootoutScore : null,
       state,
       date: event.date,
       loser,
