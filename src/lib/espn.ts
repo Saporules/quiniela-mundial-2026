@@ -290,6 +290,7 @@ export async function getUpcomingMatches(tournament = 'world_cup_2026'): Promise
 // ─── Knockout bracket ──────────────────────────────────────────────────────────
 
 export interface KnockoutMatch {
+  id: number              // ESPN event id (bracket order within a round)
   home: string            // team code or ESPN placeholder ("BRA", "2F", "3RD", "RD32"…)
   away: string
   homeScore: number | null
@@ -369,6 +370,7 @@ export async function getKnockoutMatches(tournament = 'world_cup_2026'): Promise
     }
 
     rounds[roundKey].push({
+      id: parseInt(event.id, 10) || 0,
       home: homeCode,
       away: awayCode,
       homeScore: state === 'pre' || isNaN(hs) ? null : hs,
@@ -381,7 +383,50 @@ export async function getKnockoutMatches(tournament = 'world_cup_2026'): Promise
     })
   }
 
+  // Lay each round out by the bracket TREE, not kickoff date. ESPN numbers matches
+  // in bracket order within a round, but the quarterfinals' feeder round-of-16 ties
+  // are interleaved, so date/id order alone puts halves on the wrong side. We place
+  // each match in the slot fed by its two previous-round matches: order QF/SF/final
+  // by id, then order R16 by their parent QF, and R32 by their (reordered) parent R16.
+  orderRoundsByBracket(rounds)
+
   return rounds
+}
+
+// Winner team code of a finished tie (null while unresolved).
+function knockoutWinner(m: KnockoutMatch): string | null {
+  return m.loser == null ? null : m.loser === m.home ? m.away : m.home
+}
+
+// Return `prev` reordered so each `parent` match is preceded (in output) by its two
+// feeder matches, matched via the feeder's winner. Unresolved feeders (unplayed
+// matches whose parent still shows a placeholder) fall back to leftover id order.
+function orderByParents(prev: KnockoutMatch[], parents: KnockoutMatch[]): KnockoutMatch[] {
+  const remaining = [...prev].sort((a, b) => a.id - b.id)
+  const take = (code: string): KnockoutMatch | null => {
+    const i = remaining.findIndex(p => knockoutWinner(p) === code)
+    return i >= 0 ? remaining.splice(i, 1)[0]! : null
+  }
+  const slots: (KnockoutMatch | null)[] = []
+  for (const parent of parents) slots.push(take(parent.home), take(parent.away))
+  const out = slots
+    .map(m => m ?? remaining.shift() ?? null)
+    .filter((m): m is KnockoutMatch => m != null)
+  // Keep the two feeders of each parent in stable id order (top/bottom of the pair).
+  for (let i = 0; i + 1 < out.length; i += 2) {
+    if (out[i]!.id > out[i + 1]!.id) [out[i], out[i + 1]] = [out[i + 1]!, out[i]!]
+  }
+  return out
+}
+
+function orderRoundsByBracket(rounds: KnockoutRounds): void {
+  const byId = (a: KnockoutMatch, b: KnockoutMatch) => a.id - b.id
+  rounds.qf.sort(byId)
+  rounds.sf.sort(byId)
+  rounds.final.sort(byId)
+  rounds.third.sort(byId)
+  rounds.r16 = orderByParents(rounds.r16, rounds.qf)
+  rounds.r32 = orderByParents(rounds.r32, rounds.r16)
 }
 
 function toDateParam(d: Date): string {
