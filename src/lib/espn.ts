@@ -419,12 +419,34 @@ function orderByParents(prev: KnockoutMatch[], parents: KnockoutMatch[]): Knocko
   return out
 }
 
+// ESPN numbers matches within a round in bracket-SEED order; a match's TREE
+// position (top-to-bottom in the visual) is the bit-reversal permutation of that
+// index. E.g. quarterfinals by id [1,2,3,4] sit in the tree as [1,3,2,4] — so
+// QF1 and QF3 share the left semifinal, QF2 and QF4 the right one. Reordering by
+// bit-reversal turns seed order into tree order (no-op unless a power of two).
+function bracketTreeOrder(ms: KnockoutMatch[]): KnockoutMatch[] {
+  const seeded = [...ms].sort((a, b) => a.id - b.id)
+  const n = seeded.length
+  if (n < 4 || (n & (n - 1)) !== 0) return seeded
+  const bits = Math.log2(n)
+  const reverse = (x: number) => {
+    let r = 0
+    for (let i = 0; i < bits; i++) { r = (r << 1) | (x & 1); x >>= 1 }
+    return r
+  }
+  const out = new Array<KnockoutMatch>(n)
+  for (let i = 0; i < n; i++) out[reverse(i)] = seeded[i]!
+  return out
+}
+
 function orderRoundsByBracket(rounds: KnockoutRounds): void {
   const byId = (a: KnockoutMatch, b: KnockoutMatch) => a.id - b.id
-  rounds.qf.sort(byId)
+  // SF/final/3rd have ≤2 matches (tree order == id order); QF needs bit-reversal.
   rounds.sf.sort(byId)
   rounds.final.sort(byId)
   rounds.third.sort(byId)
+  rounds.qf = bracketTreeOrder(rounds.qf)
+  // Lower rounds follow their (already tree-ordered) parents via the winner links.
   rounds.r16 = orderByParents(rounds.r16, rounds.qf)
   rounds.r32 = orderByParents(rounds.r32, rounds.r16)
 }
